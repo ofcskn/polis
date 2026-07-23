@@ -1,7 +1,13 @@
 services:
+  # paper + gate are the "dedicated-server" mode: a fresh, separate Minecraft server that only
+  # exists inside this stack. Not started by default — bring them up explicitly with
+  # `docker compose --profile dedicated-server up --build`. The default mode below instead has
+  # agent-a/agent-b join a world you already have open (e.g. your own singleplayer world, opened
+  # to LAN from the Minecraft client itself).
   paper:
     image: itzg/minecraft-server
     restart: unless-stopped
+    profiles: ["dedicated-server"]
     environment:
       EULA: "TRUE"
       TYPE: "PAPER"
@@ -17,6 +23,7 @@ services:
   gate:
     image: ghcr.io/minekube/gate:latest
     restart: unless-stopped
+    profiles: ["dedicated-server"]
     depends_on:
       - paper
     environment:
@@ -24,7 +31,7 @@ services:
     volumes:
       - ./gate/config.yml:/config/gate.yml:ro
     ports:
-      - "63325:25565"
+      - "${MINECRAFT_LAN_PORT:-63325}:25565"
       - "19132:19132/udp"
 
   world-state:
@@ -47,18 +54,18 @@ services:
       dockerfile: packages/agent-runtime/Dockerfile
     restart: unless-stopped
     depends_on:
-      - gate
       - world-state
     extra_hosts:
       # host.docker.internal resolves on Docker Desktop (macOS/Windows) automatically; this
-      # mapping additionally makes it resolve on Linux, where Ollama runs on the host machine.
+      # mapping additionally makes it resolve on Linux. Used both to reach Ollama and, in the
+      # default mode, to reach the Minecraft world running on the host's own LAN port.
       - "host.docker.internal:host-gateway"
     environment:
       AGENT_ID: "agent-a"
       AGENT_MINECRAFT_USERNAME: "agent_a_bot"
       AGENT_PERSONA: "A pragmatic builder who values order."
-      MINECRAFT_HOST: "gate"
-      MINECRAFT_PORT: "25565"
+      MINECRAFT_HOST: "host.docker.internal"
+      MINECRAFT_PORT: "${MINECRAFT_LAN_PORT:-63325}"
       WORLD_STATE_URL: "http://world-state:41241/"
       AGENT_BRAIN: "ollama"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
@@ -70,7 +77,6 @@ services:
       dockerfile: packages/agent-runtime/Dockerfile
     restart: unless-stopped
     depends_on:
-      - gate
       - world-state
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -78,8 +84,8 @@ services:
       AGENT_ID: "agent-b"
       AGENT_MINECRAFT_USERNAME: "agent_b_bot"
       AGENT_PERSONA: "A curious explorer who values fairness."
-      MINECRAFT_HOST: "gate"
-      MINECRAFT_PORT: "25565"
+      MINECRAFT_HOST: "host.docker.internal"
+      MINECRAFT_PORT: "${MINECRAFT_LAN_PORT:-63325}"
       WORLD_STATE_URL: "http://world-state:41241/"
       AGENT_BRAIN: "ollama"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"

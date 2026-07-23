@@ -3,17 +3,23 @@
 </p>
 
 Polis lets human players and small populations of scripted or LLM-driven
-agents share a single Minecraft world behind a proxy, with governance (laws,
-votes) and a currency emerging from agent negotiation rather than being
-hardcoded by the server. Agent-to-governance communication runs over the
+agents share a single Minecraft world, with governance (laws, votes) and a
+currency emerging from agent negotiation rather than being hardcoded by the
+server. Agent-to-governance communication runs over the
 [A2A (Agent2Agent) protocol](https://a2a-protocol.org/), so the shared
 civilization state is itself just another addressable agent, not a bespoke
 REST API.
 
+Agents can join a world two ways: by default, they connect directly to a
+Minecraft world you already have running — e.g. your own singleplayer world
+opened to LAN from the Minecraft client itself. An optional **dedicated
+server mode** instead spins up a fresh, separate Paper server behind a Gate
+proxy, entirely contained within this stack. See
+[Installation](#installation) below for both.
+
 This repository is the **foundation**: the shared World-State Agent, an
 Agent Runtime that can join a real Minecraft server and act on scripted
-decisions, an `OllamaBrain` that drives an agent from a local LLM, and the
-Docker/Gate wiring that puts humans and agents in the same world. See
+decisions, and an `OllamaBrain` that drives an agent from a local LLM. See
 [Current Scope](#current-scope) below for what's built versus what's next.
 
 ## Screenshots
@@ -46,6 +52,7 @@ that motivated the design, not as literal `polis` output.
 - [Installation](#installation)
   - [One-Command Install & Run](#one-command-install--run)
   - [Step-by-Step](#step-by-step)
+  - [Dedicated Server Mode (optional)](#dedicated-server-mode-optional)
   - [LAN Connection](#lan-connection)
   - [Remote Access via ngrok or Cloudflare Tunnel](#remote-access-via-ngrok-or-cloudflare-tunnel)
 - [Use Cases](#use-cases)
@@ -64,17 +71,25 @@ that motivated the design, not as literal `polis` output.
 
 ## Installation
 
+By default, agents join a Minecraft world **you already have running** —
+e.g. your own singleplayer world, opened to LAN from the Minecraft client
+itself, exactly as you'd do for normal LAN play with friends. There's also
+an opt-in [Dedicated Server Mode](#dedicated-server-mode-optional) that has
+this stack run its own separate, standalone server instead.
+
 ### One-Command Install & Run
 
-With [Docker](https://www.docker.com/) and [Ollama](https://ollama.com) already installed:
+With [Docker](https://www.docker.com/) and [Ollama](https://ollama.com)
+already installed, and a Minecraft world already open to LAN:
 
 ```bash
 git clone https://github.com/ofcskn/polis.git && cd polis && ollama pull llama3.2 && docker compose up --build
 ```
 
-This clones the repository, pulls the default local model, and brings up
-the full stack — Paper, the Gate proxy, the World-State Agent, and two
-LLM-driven agents.
+This clones the repository, pulls the default local model, and starts the
+World-State Agent plus two LLM-driven agents, which connect to your LAN
+world on port `63325` by default (see step 4 below if yours reports a
+different port).
 
 ### Step-by-Step
 
@@ -94,34 +109,66 @@ LLM-driven agents.
    ```
    A different model works too — set `OLLAMA_MODEL` in `docker-compose.yml`
    to match. See [Local LLM Brain (Ollama)](#local-llm-brain-ollama).
-4. Build and start the full stack:
+4. In Minecraft, open the world you want agents to join: **Esc → Open to
+   LAN → Start LAN World**. Note the port Minecraft reports in chat (e.g.
+   `Local game hosted on port 63325`) — it's randomized per session unless
+   you've pinned it. `docker-compose.yml` defaults to `63325`; if yours is
+   different, either reopen to LAN until you get `63325`, or override it
+   without editing any file:
+   ```bash
+   MINECRAFT_LAN_PORT=54321 docker compose up --build
+   ```
+5. Start the World-State Agent and both agents:
    ```bash
    docker compose up --build
    ```
-   This starts Paper, Gate, the World-State Agent, and two agent
-   containers (`agent-a`, `agent-b`) — see
-   [Docker Compose Topology](#docker-compose-topology).
-5. Connect a Minecraft client (Java or Bedrock) to the host machine on
-   port `63325` (Java) or `19132` (Bedrock). To connect from a second
-   computer on the same LAN, see
-   [Running the Stack](#running-the-stack).
+   (Or, with a non-default port, prefix with `MINECRAFT_LAN_PORT=...` as
+   above.) This does **not** start Paper or Gate — see
+   [Docker Compose Topology](#docker-compose-topology) for what runs by
+   default versus in dedicated-server mode.
+6. Watch your Minecraft world: `agent_a_bot` and `agent_b_bot` should join
+   within a few seconds and start acting on their own.
+
+### Dedicated Server Mode (optional)
+
+Instead of joining a world hosted by your own Minecraft client, you can
+have the stack run its own fresh, standalone Paper server behind a Gate
+proxy — useful if you don't want to keep your client open, or want a
+world that isn't also someone's singleplayer save.
+
+```bash
+docker compose --profile dedicated-server up --build
+```
+
+This additionally starts `paper` and `gate` (skipped by default), with
+Gate published on the same `63325`/`19132` ports — agent-a and agent-b
+don't need any reconfiguration between modes, since they always connect to
+whatever is listening on that port. **Don't run both modes' Minecraft
+processes on the same port at once** (your own client's LAN world and
+Gate can't both bind `63325`); pick one.
+
+Once it's up, connect a Minecraft client (Java or Bedrock) to the host
+machine on port `63325` (Java) or `19132` (Bedrock), the same as any LAN
+server — see [LAN Connection](#lan-connection) below.
 
 ### LAN Connection
 
-Your specific setup — a Mac running `docker compose up` and a **Windows**
-machine joining as a client — needs no extra Docker configuration:
-`docker-compose.yml` already publishes Gate's ports on all of the host's
-network interfaces (`63325:25565` for Java, `19132:19132/udp` for
-Bedrock), so anything on the same LAN can reach them via the host's IP.
+However the Minecraft side is being hosted — your own client (default
+mode) or Gate (dedicated-server mode) — other players on the same
+Wi-Fi/LAN connect to it exactly the same way normal LAN play works,
+nothing polis-specific. Your setup — hosting on a Mac, with a **Windows**
+machine joining as a second player:
 
-1. **On the Mac** (running the stack), find its LAN IP:
+1. **On the Mac** (hosting), find its LAN IP:
    ```bash
    ipconfig getifaddr en0   # Wi-Fi; try en1 if this is empty (Ethernet)
    ```
    You should get something like `192.168.1.23`.
 2. **On the Mac**, allow inbound connections through the firewall if it's
-   enabled: System Settings → Network → Firewall → Options, and make sure
-   incoming connections for Docker Desktop aren't blocked.
+   enabled: System Settings → Network → Firewall → Options. In default
+   mode this is your Minecraft client itself (macOS usually already
+   prompts to allow it on first LAN use); in dedicated-server mode, make
+   sure Docker Desktop isn't blocked.
 3. **On the Windows machine**, confirm it can reach the Mac before
    touching Minecraft — open PowerShell:
    ```powershell
@@ -150,13 +197,16 @@ your home router's config and exposing your public IP directly; the two
 options below avoid that by tunneling out instead.
 
 > [!Caution]
-> This stack runs Minecraft with `ONLINE_MODE: FALSE` (needed so bots
-> without Microsoft accounts can join — see [Current Scope](#current-scope)
-> / [ROADMAP.md](ROADMAP.md#phase-4--production-hardening)). That also
-> means **no Mojang authentication**: anyone who reaches the exposed port
-> can join under any username. Only share a public tunnel URL with people
-> you trust, keep sessions short-lived, and consider whitelisting (see
-> below) before exposing this beyond a LAN.
+> Neither mode enforces real Mojang authentication for joiners. A vanilla
+> client's "Open to LAN" world (default mode) doesn't validate a Mojang
+> session for LAN-style direct-IP joins, and dedicated-server mode runs
+> Paper with `ONLINE_MODE: FALSE` (needed so bots without Microsoft
+> accounts can join — see [Current Scope](#current-scope) /
+> [ROADMAP.md](ROADMAP.md#phase-4--production-hardening)). Either way,
+> once you tunnel a port to the internet, **anyone who reaches it can join
+> under any username**. Only share a public tunnel URL with people you
+> trust, keep sessions short-lived, and consider whitelisting (see below)
+> before exposing this beyond a LAN.
 
 **Option A — ngrok (simpler, no domain needed):**
 
@@ -216,6 +266,20 @@ relays through Cloudflare to your Mac). This is more setup than ngrok, but
 the hostname stays stable across restarts and isn't tied to ngrok's
 session limits.
 
+**Whitelisting.** In [dedicated-server mode](#dedicated-server-mode-optional),
+Paper's image supports a real whitelist even with `ONLINE_MODE: FALSE` —
+add to the `paper` service's `environment` in `docker-compose.yml`:
+
+```yaml
+ENABLE_WHITELIST: "TRUE"
+WHITELIST: "trusted_username_one,trusted_username_two"
+```
+
+In default mode there's no separate server process to configure this way
+— it's your own Minecraft client's world, so the same trust boundary as
+normal LAN/tunneled singleplayer play applies: don't share the address
+with anyone you wouldn't otherwise invite in.
+
 ## Use Cases
 
 **Multi-agent systems research.** A controllable, inspectable sandbox for
@@ -269,39 +333,47 @@ flowchart TB
         human["Human player<br/>(Java or Bedrock client)"]
     end
 
-    subgraph stack["Docker Compose stack"]
-        gate["Gate proxy<br/>(minekube/gate)<br/>Java :25565 / Bedrock :19132"]
-        paper["Paper<br/>(Minecraft server)"]
+    world["Minecraft World<br/>(your own client's LAN world, default —<br/>or Paper via Gate, dedicated-server mode)"]
 
+    subgraph stack["Docker Compose stack (always runs)"]
         subgraph agentA["agent-a container"]
             aRuntimeA["Agent Runtime"]
         end
         subgraph agentB["agent-b container"]
             aRuntimeB["Agent Runtime"]
         end
-
         worldstate["World-State Agent<br/>(A2A server + SQLite)"]
     end
 
-    human -- "Minecraft protocol" --> gate
-    aRuntimeA -- "Minecraft protocol<br/>(mineflayer)" --> gate
-    aRuntimeB -- "Minecraft protocol<br/>(mineflayer)" --> gate
-    gate -- "routes to backend" --> paper
+    subgraph dedicated["--profile dedicated-server (optional)"]
+        gate["Gate proxy<br/>(minekube/gate)<br/>Java :25565 / Bedrock :19132"]
+        paper["Paper<br/>(Minecraft server)"]
+        gate -- "routes to backend" --> paper
+    end
+
+    human -- "Minecraft protocol" --> world
+    aRuntimeA -- "Minecraft protocol<br/>(mineflayer)" --> world
+    aRuntimeB -- "Minecraft protocol<br/>(mineflayer)" --> world
+    gate -. "provides world<br/>(dedicated-server mode only)" .-> world
 
     aRuntimeA -. "A2A over HTTP<br/>(propose, vote, transfer)" .-> worldstate
     aRuntimeB -. "A2A over HTTP<br/>(propose, vote, transfer)" .-> worldstate
 
     style stack fill:#f4f4f8,stroke:#8888aa
+    style dedicated fill:#f4f4f8,stroke:#8888aa,stroke-dasharray: 5 5
     style worldstate fill:#e8f0ff,stroke:#3366cc
     style gate fill:#eef7ee,stroke:#339966
     style paper fill:#eef7ee,stroke:#339966
+    style world fill:#fff6e0,stroke:#cc9900
 ```
 
 **In-game chat** (solid arrows above) is the human-visible channel: chat,
 movement, mining. **A2A** (dashed arrows) is the structured,
 human-invisible-by-default channel: an agent registering itself, proposing a
-law, voting, or transferring currency. Gate is never involved in A2A
-traffic — it only proxies raw Minecraft connections.
+law, voting, or transferring currency. Gate/Paper are only involved when
+running in dedicated-server mode; by default, the "Minecraft World" node
+above is just your own client's LAN world, and agents connect to it
+directly.
 
 ## Repository Structure
 
@@ -574,31 +646,47 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph compose["docker-compose.yml"]
+    subgraph compose["docker-compose.yml (default: docker compose up)"]
         direction TB
-        paper["paper<br/>itzg/minecraft-server<br/>(Paper, offline mode)"]
-        gate["gate<br/>ghcr.io/minekube/gate<br/>ports 25565/tcp, 19132/udp"]
         worldstate["world-state<br/>packages/world-state/Dockerfile<br/>port 41241"]
         agentA["agent-a<br/>packages/agent-runtime/Dockerfile"]
         agentB["agent-b<br/>packages/agent-runtime/Dockerfile"]
-        volPaper[("paper-data volume")]
         volWS[("world-state-data volume")]
     end
 
+    subgraph dedicated["profile: dedicated-server (docker compose --profile dedicated-server up)"]
+        direction TB
+        paper["paper<br/>itzg/minecraft-server<br/>(Paper, offline mode)"]
+        gate["gate<br/>ghcr.io/minekube/gate<br/>ports MINECRAFT_LAN_PORT:25565/tcp, 19132/udp"]
+        volPaper[("paper-data volume")]
+    end
+
+    yourWorld["your Minecraft client's<br/>LAN world (default mode)"]
+
     gate -->|"servers.paper: paper:25565<br/>via.enabled: true (protocol translation)<br/>forwarding.mode: none"| paper
-    agentA -->|MINECRAFT_HOST=gate| gate
-    agentB -->|MINECRAFT_HOST=gate| gate
+    hostport(("host's<br/>MINECRAFT_LAN_PORT<br/>(default 63325)"))
+    yourWorld -->|"binds (default mode)"| hostport
+    gate -->|"binds (dedicated-server mode)"| hostport
+    agentA -->|"MINECRAFT_HOST=host.docker.internal<br/>MINECRAFT_PORT=MINECRAFT_LAN_PORT"| hostport
+    agentB -->|"MINECRAFT_HOST=host.docker.internal<br/>MINECRAFT_PORT=MINECRAFT_LAN_PORT"| hostport
     agentA -->|WORLD_STATE_URL| worldstate
     agentB -->|WORLD_STATE_URL| worldstate
     paper --- volPaper
     worldstate --- volWS
 ```
 
-Two Gate settings exist because a live run surfaced real bugs: `via.enabled`
-starts Gate's bundled protocol-translation subprocess, without which Gate
-dials Paper using a different protocol version than the client negotiated;
-`forwarding.mode: none` disables Gate's default BungeeCord-style forwarding,
-which a vanilla Paper server (no matching `spigot.yml` setting) rejects as
+Both agents always target `host.docker.internal:$MINECRAFT_LAN_PORT` —
+whatever's actually listening there (your own client's LAN world, or Gate
+in dedicated-server mode) is what they join, with no per-mode
+reconfiguration needed. This is also why the two modes can't run their
+Minecraft process on the same port simultaneously.
+
+Two Gate settings exist (dedicated-server mode only) because a live run
+surfaced real bugs: `via.enabled` starts Gate's bundled
+protocol-translation subprocess, without which Gate dials Paper using a
+different protocol version than the client negotiated; `forwarding.mode:
+none` disables Gate's default BungeeCord-style forwarding, which a
+vanilla Paper server (no matching `spigot.yml` setting) rejects as
 malformed login data.
 
 ## Current Scope
@@ -607,7 +695,9 @@ This repository is a **foundation**, not the full vision. What's here and
 verified end-to-end:
 
 - The World-State Agent's governance and economy logic, over real A2A.
-- The Agent Runtime connecting to real Minecraft via Gate.
+- The Agent Runtime connecting to real Minecraft, either directly to a
+  client-hosted LAN world (default) or via Gate to a dedicated Paper
+  server (`--profile dedicated-server`).
 - Two `AgentBrain` implementations: a scripted `PuppetBrain`, and an
   `OllamaBrain` that drives an agent from a locally-run LLM (see
   [Local LLM Brain (Ollama)](#local-llm-brain-ollama) below).
@@ -640,16 +730,13 @@ npm run test:integration
 
 ## Running the Stack
 
-```bash
-docker compose up --build
-```
-
-Connect a Minecraft client (Java or Bedrock) to the host running Gate on
-port 63325 (Java) or 19132 (Bedrock). To connect from another machine on
-the same LAN, or from anywhere on the internet via a tunnel, see
-[LAN Connection](#lan-connection) and
+See [Installation](#installation) — `docker compose up --build` for the
+default mode (agents join a world your Minecraft client already has open
+to LAN), or `docker compose --profile dedicated-server up --build` for a
+separate, standalone server. Both are covered there in full, along with
+[LAN Connection](#lan-connection) for other players on your network and
 [Remote Access via ngrok or Cloudflare Tunnel](#remote-access-via-ngrok-or-cloudflare-tunnel)
-under [Installation](#installation).
+for anyone else.
 
 ## License
 

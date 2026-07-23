@@ -24,7 +24,7 @@ function buildBrain(identity: { id: string; role?: string; persona: string }): A
 
 async function main() {
   const identity = agentIdentityFromEnv();
-  const minecraftHost = process.env.MINECRAFT_HOST ?? 'gate';
+  const minecraftHost = process.env.MINECRAFT_HOST ?? 'localhost';
   const minecraftPort = Number(process.env.MINECRAFT_PORT ?? 25565);
   const worldStateUrl = process.env.WORLD_STATE_URL ?? 'http://world-state:41241/';
   const tickIntervalMs = Number(process.env.TICK_INTERVAL_MS ?? 5000);
