@@ -58,7 +58,7 @@ export class OllamaBrain implements AgentBrain {
 
   constructor(private readonly options: OllamaBrainOptions) {
     this.baseUrl = options.baseUrl ?? 'http://localhost:11434';
-    this.model = options.model ?? 'llama3.2';
+    this.model = options.model ?? 'qwen2.5:7b';
     this.fetchFn = options.fetchFn ?? fetch;
     this.now = options.now ?? (() => Date.now());
     this.baseBackoffMs = options.baseBackoffMs ?? 2000;

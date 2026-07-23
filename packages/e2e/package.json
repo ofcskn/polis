@@ -10,7 +10,7 @@
     "@polis/agent-runtime": "*",
     "@polis/protocol": "*",
     "@polis/world-state": "*",
-    "mineflayer": "^4.23.0"
+    "mineflayer": "4.37.1"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

@@ -83,12 +83,12 @@ With [Docker](https://www.docker.com/) and [Ollama](https://ollama.com)
 already installed, and a Minecraft world already open to LAN:
 
 ```bash
-git clone https://github.com/ofcskn/polis.git && cd polis && ollama pull llama3.2 && docker compose up --build
+git clone https://github.com/ofcskn/polis.git && cd polis && ollama pull qwen2.5:7b && docker compose up --build
 ```
 
 This clones the repository, pulls the default local model, and starts the
-World-State Agent plus two LLM-driven agents, which connect to your LAN
-world on port `63325` by default (see step 4 below if yours reports a
+World-State Agent plus a single LLM-driven agent, which connects to your
+LAN world on port `63325` by default (see step 4 below if yours reports a
 different port).
 
 ### Step-by-Step
@@ -103,31 +103,40 @@ different port).
    git clone https://github.com/ofcskn/polis.git
    cd polis
    ```
-3. Pull a local model for the agents to use:
+3. Pull a local model for the agent to use:
    ```bash
-   ollama pull llama3.2
+   ollama pull qwen2.5:7b
    ```
-   A different model works too — set `OLLAMA_MODEL` in `docker-compose.yml`
-   to match. See [Local LLM Brain (Ollama)](#local-llm-brain-ollama).
-4. In Minecraft, open the world you want agents to join: **Esc → Open to
-   LAN → Start LAN World**. Note the port Minecraft reports in chat (e.g.
-   `Local game hosted on port 63325`) — it's randomized per session unless
-   you've pinned it. `docker-compose.yml` defaults to `63325`; if yours is
-   different, either reopen to LAN until you get `63325`, or override it
-   without editing any file:
+   The default is `qwen2.5:7b` — noticeably better at following the strict
+   JSON action schema than a smaller 3B model, without needing a huge
+   amount of RAM. A different model works too — set `OLLAMA_MODEL` (either
+   in `docker-compose.yml`, or as an env var: `OLLAMA_MODEL=llama3.1
+   docker compose up --build`). See
+   [Local LLM Brain (Ollama)](#local-llm-brain-ollama).
+4. In Minecraft, open the world you want the agent to join: **Esc → Open
+   to LAN → Start LAN World**. Note the port Minecraft reports in chat
+   (e.g. `Local game hosted on port 63325`) — it's randomized per session
+   unless you've pinned it. `docker-compose.yml` defaults to `63325`; if
+   yours is different, either reopen to LAN until you get `63325`, or
+   override it without editing any file:
    ```bash
    MINECRAFT_LAN_PORT=54321 docker compose up --build
    ```
-5. Start the World-State Agent and both agents:
+5. Start the World-State Agent and the agent:
    ```bash
    docker compose up --build
    ```
    (Or, with a non-default port, prefix with `MINECRAFT_LAN_PORT=...` as
-   above.) This does **not** start Paper or Gate — see
+   above.) This does **not** start Paper, Gate, or a second agent — see
    [Docker Compose Topology](#docker-compose-topology) for what runs by
-   default versus in dedicated-server mode.
-6. Watch your Minecraft world: `lenser_a_bot` and `lenser_b_bot` should
-   join within a few seconds and start acting on their own.
+   default versus optionally.
+6. Watch your Minecraft world: `lenser_a_bot` should join within a few
+   seconds and start acting on its own.
+
+A second agent (`agent-b`) is defined but off by default — enable it with
+`docker compose --profile multi-agent up --build` if you want the
+multi-agent governance behavior (proposals, voting) rather than a single
+agent.
 
 ### Dedicated Server Mode (optional)
 
@@ -597,16 +606,20 @@ rather than hammering the endpoint every tick.
 
 1. Install [Ollama](https://ollama.com) and pull a model, e.g.:
    ```bash
-   ollama pull llama3.2
+   ollama pull qwen2.5:7b
    ```
+   A 7-8B model is noticeably more reliable at following the strict JSON
+   action schema than a 3B model like `llama3.2` — smaller models were
+   observed summarizing state in prose or echoing input data back instead
+   of returning valid actions.
 2. Make sure Ollama is running (`ollama serve`, or the desktop app) and
    reachable at `http://localhost:11434`.
-3. `docker-compose.yml` already points `agent-a` and `agent-b` at
-   `OLLAMA_BASE_URL=http://host.docker.internal:11434` with
+3. `docker-compose.yml` already points `agent-a` (and `agent-b`, if
+   enabled) at `OLLAMA_BASE_URL=http://host.docker.internal:11434` with
    `AGENT_BRAIN=ollama` — the containers reach the model running on your
    host machine, no extra network config needed on macOS/Windows Docker
    Desktop (an `extra_hosts` entry makes the same URL resolve on Linux too).
-4. Run `docker compose up --build` as described below. Each agent registers
+4. Run `docker compose up --build` as described below. The agent registers
    itself with the World-State Agent, then is fully driven by the model:
    deciding when to chat, move, propose laws, and vote.
 
@@ -616,7 +629,7 @@ rather than hammering the endpoint every tick.
 |---|---|---|
 | `AGENT_BRAIN` | `ollama` | `ollama` for `OllamaBrain`, or `puppet` for the scripted brain (useful for infra testing without a model running). |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL of the Ollama server. |
-| `OLLAMA_MODEL` | `llama3.2` | Model name, as shown by `ollama list`. |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Model name, as shown by `ollama list`. |
 | `AGENT_PERSONA` | *(empty)* | Free-text persona injected into the system prompt; already modeled per-agent in `docker-compose.yml`. |
 
 See [Screenshots](#screenshots) at the top of this document for the
@@ -668,8 +681,12 @@ flowchart TB
         direction TB
         worldstate["world-state<br/>packages/world-state/Dockerfile<br/>port 41241"]
         agentA["agent-a<br/>packages/agent-runtime/Dockerfile"]
-        agentB["agent-b<br/>packages/agent-runtime/Dockerfile"]
         volWS[("world-state-data volume")]
+    end
+
+    subgraph multiagent["profile: multi-agent (docker compose --profile multi-agent up)"]
+        direction TB
+        agentB["agent-b<br/>packages/agent-runtime/Dockerfile"]
     end
 
     subgraph dedicated["profile: dedicated-server (docker compose --profile dedicated-server up)"]
@@ -691,13 +708,16 @@ flowchart TB
     agentB -->|WORLD_STATE_URL| worldstate
     paper --- volPaper
     worldstate --- volWS
+
+    style multiagent fill:#f4f4f8,stroke:#8888aa,stroke-dasharray: 5 5
 ```
 
-Both agents always target `host.docker.internal:$MINECRAFT_LAN_PORT` —
-whatever's actually listening there (your own client's LAN world, or Gate
-in dedicated-server mode) is what they join, with no per-mode
-reconfiguration needed. This is also why the two modes can't run their
-Minecraft process on the same port simultaneously.
+Both agents (when `agent-b` is enabled) always target
+`host.docker.internal:$MINECRAFT_LAN_PORT` — whatever's actually listening
+there (your own client's LAN world, or Gate in dedicated-server mode) is
+what they join, with no per-mode reconfiguration needed. This is also why
+the two modes can't run their Minecraft process on the same port
+simultaneously.
 
 Two Gate settings exist (dedicated-server mode only) because a live run
 surfaced real bugs: `via.enabled` starts Gate's bundled
@@ -719,8 +739,10 @@ verified end-to-end:
 - Two `AgentBrain` implementations: a scripted `PuppetBrain`, and an
   `OllamaBrain` that drives an agent from a locally-run LLM (see
   [Local LLM Brain (Ollama)](#local-llm-brain-ollama) below).
-- `agent-a` / `agent-b` in `docker-compose.yml` give the default stack two
-  independently-personified agents out of the box.
+- `agent-a` in `docker-compose.yml` runs by default; `agent-b` (a second,
+  independently-personified agent) is defined but gated behind the
+  `multi-agent` profile for anyone who wants governance dynamics (multiple
+  agents proposing/voting) rather than a single agent.
 
 **Deliberately out of scope for this repository:**
 

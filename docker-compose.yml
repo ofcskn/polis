@@ -69,13 +69,16 @@ services:
       WORLD_STATE_URL: "http://world-state:41241/"
       AGENT_BRAIN: "ollama"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
-      OLLAMA_MODEL: "llama3.2"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
 
+  # A second agent, off by default (single agent is the default per current preference).
+  # Enable with: docker compose --profile multi-agent up --build
   agent-b:
     build:
       context: .
       dockerfile: packages/agent-runtime/Dockerfile
     restart: unless-stopped
+    profiles: ["multi-agent"]
     depends_on:
       - world-state
     extra_hosts:
@@ -89,7 +92,7 @@ services:
       WORLD_STATE_URL: "http://world-state:41241/"
       AGENT_BRAIN: "ollama"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
-      OLLAMA_MODEL: "llama3.2"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
 
 volumes:
   paper-data:
