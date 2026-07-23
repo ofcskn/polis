@@ -1,0 +1,12 @@
+config:
+  bind: 0.0.0.0:25565
+  onlineMode: false
+  servers:
+    paper: paper:25565
+  try:
+    - paper
+  status:
+    motd: |
+      §bPolis
+      §eHumans and AI agents, one world.
+  bedrock: true

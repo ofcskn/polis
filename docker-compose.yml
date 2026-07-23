@@ -1,0 +1,78 @@
+services:
+  paper:
+    image: itzg/minecraft-server
+    restart: unless-stopped
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.8"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "2G"
+      ENFORCE_SECURE_PROFILE: "false"
+    expose:
+      - "25565"
+    volumes:
+      - paper-data:/data
+
+  gate:
+    image: ghcr.io/minekube/gate:latest
+    restart: unless-stopped
+    depends_on:
+      - paper
+    environment:
+      GATE_CONFIG: /config/gate.yml
+    volumes:
+      - ./gate/config.yml:/config/gate.yml:ro
+    ports:
+      - "25565:25565"
+      - "19132:19132/udp"
+
+  world-state:
+    build:
+      context: .
+      dockerfile: packages/world-state/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "41241"
+      WORLD_STATE_BASE_URL: "http://world-state:41241/"
+      WORLD_STATE_DB_PATH: "/data/world-state.sqlite"
+    volumes:
+      - world-state-data:/data
+    expose:
+      - "41241"
+
+  agent-a:
+    build:
+      context: .
+      dockerfile: packages/agent-runtime/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - gate
+      - world-state
+    environment:
+      AGENT_ID: "agent-a"
+      AGENT_MINECRAFT_USERNAME: "agent_a_bot"
+      AGENT_PERSONA: "A pragmatic builder who values order."
+      MINECRAFT_HOST: "gate"
+      MINECRAFT_PORT: "25565"
+      WORLD_STATE_URL: "http://world-state:41241/"
+
+  agent-b:
+    build:
+      context: .
+      dockerfile: packages/agent-runtime/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - gate
+      - world-state
+    environment:
+      AGENT_ID: "agent-b"
+      AGENT_MINECRAFT_USERNAME: "agent_b_bot"
+      AGENT_PERSONA: "A curious explorer who values fairness."
+      MINECRAFT_HOST: "gate"
+      MINECRAFT_PORT: "25565"
+      WORLD_STATE_URL: "http://world-state:41241/"
+
+volumes:
+  paper-data:
+  world-state-data:
