@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/start.js",
     "test": "vitest run --exclude \"**/*.integration.test.ts\"",
-    "test:integration": "vitest run --include \"**/*.integration.test.ts\""
+    "test:integration": "vitest run integration"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.0",
