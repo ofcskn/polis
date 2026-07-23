@@ -114,7 +114,8 @@ describe('GovernanceEngine', () => {
     engine.registerAgent('agent-c');
     const proposal = engine.proposeLaw('agent-a', 'x');
 
-    const updated = engine.vote('agent-b', proposal.id, 'no');
+    engine.vote('agent-b', proposal.id, 'no');
+    const updated = engine.vote('agent-c', proposal.id, 'no');
 
     expect(updated.status).toBe('rejected');
   });

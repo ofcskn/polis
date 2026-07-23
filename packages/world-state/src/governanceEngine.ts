@@ -41,7 +41,7 @@ export class GovernanceEngine {
     }
 
     const votes = { ...proposal.votes, [agentId]: choice };
-    const totalAgents = this.repository.listAgents().length - 1; // Exclude proposer from quorum
+    const totalAgents = this.repository.listAgents().length;
     const yesVotes = Object.values(votes).filter((v) => v === 'yes').length;
     const noVotes = Object.values(votes).filter((v) => v === 'no').length;
 
