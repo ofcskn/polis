@@ -51,6 +51,7 @@ afterAll(() => {
   worldState.close();
   httpServer.close();
   observerBot.end();
+  rmSync(tempDir, { recursive: true, force: true });
 });
 
 interface ProposalView {
