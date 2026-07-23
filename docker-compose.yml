@@ -24,7 +24,7 @@ services:
     volumes:
       - ./gate/config.yml:/config/gate.yml:ro
     ports:
-      - "25565:25565"
+      - "63325:25565"
       - "19132:19132/udp"
 
   world-state:

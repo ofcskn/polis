@@ -102,7 +102,7 @@ LLM-driven agents.
    containers (`agent-a`, `agent-b`) — see
    [Docker Compose Topology](#docker-compose-topology).
 5. Connect a Minecraft client (Java or Bedrock) to the host machine on
-   port `25565` (Java) or `19132` (Bedrock). To connect from a second
+   port `63325` (Java) or `19132` (Bedrock). To connect from a second
    computer on the same LAN, see
    [Running the Stack](#running-the-stack).
 
@@ -111,7 +111,7 @@ LLM-driven agents.
 Your specific setup — a Mac running `docker compose up` and a **Windows**
 machine joining as a client — needs no extra Docker configuration:
 `docker-compose.yml` already publishes Gate's ports on all of the host's
-network interfaces (`25565:25565` for Java, `19132:19132/udp` for
+network interfaces (`63325:25565` for Java, `19132:19132/udp` for
 Bedrock), so anything on the same LAN can reach them via the host's IP.
 
 1. **On the Mac** (running the stack), find its LAN IP:
@@ -125,14 +125,14 @@ Bedrock), so anything on the same LAN can reach them via the host's IP.
 3. **On the Windows machine**, confirm it can reach the Mac before
    touching Minecraft — open PowerShell:
    ```powershell
-   Test-NetConnection 192.168.1.23 -Port 25565
+   Test-NetConnection 192.168.1.23 -Port 63325
    ```
    `TcpTestSucceeded : True` means you're good; `False` means either the
    Mac's firewall or the router (if the two machines are on different
    Wi-Fi bands/VLANs) is blocking it.
 4. **On the Windows machine**, open the Minecraft Launcher → **Multiplayer**
    → **Add Server**, and enter the Mac's IP and port as the server address,
-   e.g. `192.168.1.23:25565`. For Bedrock, use the same IP with port
+   e.g. `192.168.1.23:63325`. For Bedrock, use the same IP with port
    `19132` in the Bedrock client's "Add Server" screen.
 5. Select the server and **Join Game**.
 
@@ -144,7 +144,7 @@ side is macOS, Windows, or Linux — only the exact "find my IP" and
 
 LAN only reaches machines on the same network. To let a computer
 **anywhere on the internet** connect — not just your Windows machine on
-the same Wi-Fi — you need to expose port `25565` (and/or `19132` for
+the same Wi-Fi — you need to expose port `63325` (and/or `19132` for
 Bedrock) publicly. Router port-forwarding can do this but means editing
 your home router's config and exposing your public IP directly; the two
 options below avoid that by tunneling out instead.
@@ -163,11 +163,11 @@ options below avoid that by tunneling out instead.
 ```bash
 brew install ngrok/ngrok/ngrok        # or download from ngrok.com
 ngrok config add-authtoken <your-authtoken>   # free account, from the ngrok dashboard
-ngrok tcp 25565
+ngrok tcp 63325
 ```
 
 `ngrok` prints a forwarding address like `tcp://0.tcp.ngrok.io:41234 ->
-localhost:25565`. Give the `host:port` part (e.g. `0.tcp.ngrok.io:41234`)
+localhost:63325`. Give the `host:port` part (e.g. `0.tcp.ngrok.io:41234`)
 to whoever's connecting — they add it as a server in their Minecraft
 client exactly like a LAN address, no extra software needed on their end.
 Note: on ngrok's free plan this address changes every time you restart the
@@ -195,7 +195,7 @@ tunnel: polis-minecraft
 credentials-file: /path/to/<tunnel-id>.json
 ingress:
   - hostname: minecraft.yourdomain.com
-    service: tcp://localhost:25565
+    service: tcp://localhost:63325
   - service: http_status:404
 ```
 
@@ -645,7 +645,7 @@ docker compose up --build
 ```
 
 Connect a Minecraft client (Java or Bedrock) to the host running Gate on
-port 25565 (Java) or 19132 (Bedrock). To connect from another machine on
+port 63325 (Java) or 19132 (Bedrock). To connect from another machine on
 the same LAN, or from anywhere on the internet via a tunnel, see
 [LAN Connection](#lan-connection) and
 [Remote Access via ngrok or Cloudflare Tunnel](#remote-access-via-ngrok-or-cloudflare-tunnel)
