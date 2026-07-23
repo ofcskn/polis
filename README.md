@@ -1,18 +1,352 @@
 # Polis
 
-Polis lets human players and small populations of LLM-driven agents share a
-single Minecraft world behind a proxy, with governance, roles, and a currency
-emerging from agent negotiation rather than being scripted by the server.
+Polis lets human players and small populations of scripted or LLM-driven
+agents share a single Minecraft world behind a proxy, with governance (laws,
+votes) and a currency emerging from agent negotiation rather than being
+hardcoded by the server. Agent-to-governance communication runs over the
+[A2A (Agent2Agent) protocol](https://a2a-protocol.org/), so the shared
+civilization state is itself just another addressable agent, not a bespoke
+REST API.
 
-## Architecture
+This repository is the **foundation**: the shared World-State Agent, an
+Agent Runtime that can join a real Minecraft server and act on scripted
+decisions, and the Docker/Gate wiring that puts humans and agents in the
+same world. An LLM-driven brain is a deliberate follow-up — see
+[Current Scope](#current-scope) below.
 
-- `packages/protocol` — shared wire-format types for World-State commands.
-- `packages/world-state` — the civilization's shared state (agent registry,
-  law proposals, currency ledger), exposed as an A2A-addressable agent.
-- `packages/agent-runtime` — connects an agent to Minecraft (via mineflayer)
-  and to the World-State Agent (via A2A), driven by a pluggable `AgentBrain`.
-- `gate/`, `docker-compose.yml` — Gate proxy and Paper server wiring both
-  human and agent Minecraft connections into one world.
+## Contents
+
+- [High-Level Architecture](#high-level-architecture)
+- [Repository Structure](#repository-structure)
+- [World-State Agent](#world-state-agent)
+- [Agent Runtime](#agent-runtime)
+- [Governance: How a Proposal Becomes Law](#governance-how-a-proposal-becomes-law)
+- [Docker Compose Topology](#docker-compose-topology)
+- [Current Scope](#current-scope)
+- [Development](#development)
+- [Running the Stack](#running-the-stack)
+
+## High-Level Architecture
+
+Two communication channels are deliberately kept separate. In-game Minecraft
+chat is what humans read and can address agents through. The A2A protocol
+carries structured governance traffic — proposals, votes, currency transfers
+— between agents and the World-State Agent. Because that traffic isn't
+visible in-game, each agent announces meaningful outcomes (a law passing) in
+chat, so a human watching the world can still see the civilization emerge.
+
+```mermaid
+flowchart TB
+    subgraph clients["Players"]
+        human["Human player<br/>(Java or Bedrock client)"]
+    end
+
+    subgraph stack["Docker Compose stack"]
+        gate["Gate proxy<br/>(minekube/gate)<br/>Java :25565 / Bedrock :19132"]
+        paper["Paper<br/>(Minecraft server)"]
+
+        subgraph agentA["agent-a container"]
+            aRuntimeA["Agent Runtime"]
+        end
+        subgraph agentB["agent-b container"]
+            aRuntimeB["Agent Runtime"]
+        end
+
+        worldstate["World-State Agent<br/>(A2A server + SQLite)"]
+    end
+
+    human -- "Minecraft protocol" --> gate
+    aRuntimeA -- "Minecraft protocol<br/>(mineflayer)" --> gate
+    aRuntimeB -- "Minecraft protocol<br/>(mineflayer)" --> gate
+    gate -- "routes to backend" --> paper
+
+    aRuntimeA -. "A2A over HTTP<br/>(propose, vote, transfer)" .-> worldstate
+    aRuntimeB -. "A2A over HTTP<br/>(propose, vote, transfer)" .-> worldstate
+
+    style stack fill:#f4f4f8,stroke:#8888aa
+    style worldstate fill:#e8f0ff,stroke:#3366cc
+    style gate fill:#eef7ee,stroke:#339966
+    style paper fill:#eef7ee,stroke:#339966
+```
+
+**In-game chat** (solid arrows above) is the human-visible channel: chat,
+movement, mining. **A2A** (dashed arrows) is the structured,
+human-invisible-by-default channel: an agent registering itself, proposing a
+law, voting, or transferring currency. Gate is never involved in A2A
+traffic — it only proxies raw Minecraft connections.
+
+## Repository Structure
+
+An npm-workspaces TypeScript monorepo. `protocol` has no dependencies;
+`world-state` and `agent-runtime` both depend on it as their shared wire
+format, but not on each other.
+
+```mermaid
+flowchart LR
+    protocol["@polis/protocol<br/><i>WorldStateCommand types,<br/>parse/serialize</i>"]
+    worldstate["@polis/world-state<br/><i>governance, ledger,<br/>A2A server, SQLite</i>"]
+    agentruntime["@polis/agent-runtime<br/><i>mineflayer + A2A client,<br/>AgentLoopController</i>"]
+    e2e["@polis/e2e<br/><i>end-to-end test</i>"]
+
+    worldstate -->|depends on| protocol
+    agentruntime -->|depends on| protocol
+    e2e -->|depends on<br/>for testing| worldstate
+    e2e -->|depends on<br/>for testing| agentruntime
+
+    style protocol fill:#fff6e0,stroke:#cc9900
+    style worldstate fill:#e8f0ff,stroke:#3366cc
+    style agentruntime fill:#ffe8f0,stroke:#cc3366
+    style e2e fill:#f0f0f0,stroke:#888888
+```
+
+| Package | Responsibility |
+|---|---|
+| `packages/protocol` | Shared `WorldStateCommand` / `WorldStateCommandResult` types and the parse/serialize functions both other packages use as their wire format. |
+| `packages/world-state` | Owns the civilization's shared state — the agent registry, law proposals and votes, and the currency ledger — exposed as a real A2A-addressable agent, backed by SQLite. |
+| `packages/agent-runtime` | Connects one agent to Minecraft (via `mineflayer`) and to the World-State Agent (via an A2A client), driven by a pluggable decision-making interface. |
+| `packages/e2e` | End-to-end test proving the full propose → vote → active law → chat announcement flow over real infrastructure. |
+| `gate/`, `docker-compose.yml` | Gate proxy config and the compose stack wiring Paper, Gate, World-State, and two agent containers together. |
+
+## World-State Agent
+
+The World-State Agent is a small Express server speaking the real A2A
+protocol (`@a2a-js/sdk`) — it publishes an Agent Card describing its
+skills and answers `sendMessage` calls by dispatching to plain, framework-free
+domain logic underneath. Design follows GRASP: each class has one
+information-holding or coordinating responsibility.
+
+```mermaid
+classDiagram
+    class WorldStateAgentServer {
+        <<A2A server bootstrap>>
+        +createWorldStateServer(options) WorldStateServer
+    }
+    class WorldStateAgentExecutor {
+        <<implements AgentExecutor>>
+        +execute(requestContext, eventBus)
+        +cancelTask()
+        -dispatch(message) WorldStateCommandResult
+    }
+    class GovernanceEngine {
+        +registerAgent(agentId, role?)
+        +proposeLaw(agentId, description) Proposal
+        +vote(agentId, proposalId, choice) Proposal
+        +listProposals(status?) Proposal[]
+    }
+    class CurrencyLedger {
+        +balance(agentId) number
+        +transfer(fromId, toId, amount)
+    }
+    class WorldStateRepository {
+        <<interface>>
+        +saveProposal(proposal)
+        +getProposal(id) Proposal
+        +listProposals(status?) Proposal[]
+        +saveAgent(agent)
+        +getAgent(id) AgentRecord
+        +listAgents() AgentRecord[]
+    }
+    class SqliteWorldStateRepository {
+        <<implements WorldStateRepository>>
+        -db: Database
+    }
+
+    WorldStateAgentServer --> WorldStateAgentExecutor : wires up
+    WorldStateAgentServer --> SqliteWorldStateRepository : wires up
+    WorldStateAgentExecutor --> GovernanceEngine : dispatches to
+    WorldStateAgentExecutor --> CurrencyLedger : dispatches to
+    GovernanceEngine --> WorldStateRepository : reads/writes via
+    CurrencyLedger --> WorldStateRepository : reads/writes via
+    SqliteWorldStateRepository ..|> WorldStateRepository : implements
+```
+
+| Class | GRASP pattern | Why |
+|---|---|---|
+| `WorldStateAgentExecutor` | Pure Fabrication | Doesn't map to a real-world civilization concept — exists purely to bridge the A2A protocol's event model to the domain logic below it. |
+| `GovernanceEngine` / `CurrencyLedger` | Information Expert | Each owns the data (proposals/votes, balances) needed to validate its own operations. |
+| `WorldStateRepository` (interface) | Protected Variations | `GovernanceEngine`/`CurrencyLedger` never see SQLite directly — swapping persistence later is a one-file change. |
+
+**Skills exposed over A2A:** `register_agent`, `propose_law`, `vote`,
+`transfer_currency`, `list_proposals`. Every skill call is a JSON-encoded
+[`WorldStateCommand`](packages/protocol/src/commands.ts) sent as an A2A text
+message part; the executor parses it, dispatches to the domain logic, and
+returns a `{ ok, data | error }` result as a text artifact.
+
+**Governance rule (fixed, not configurable):** a proposal becomes an active
+law once yes-votes exceed half of all currently registered agents; it's
+rejected once no-votes reach or exceed half. Nothing about the law's
+*content* is hardcoded — only this quorum mechanism is.
+
+## Agent Runtime
+
+One container per agent. Two small "port" interfaces —
+[`MinecraftPort`](packages/agent-runtime/src/types.ts) and
+[`WorldStatePort`](packages/agent-runtime/src/types.ts) — decouple the
+decision-making brain from both mineflayer and the A2A SDK, so a future LLM
+brain can be swapped in without touching the Minecraft or governance-wiring
+code at all.
+
+```mermaid
+classDiagram
+    class AgentBrain {
+        <<interface>>
+        +decide(perception) Action[]
+    }
+    class PuppetBrain {
+        <<implements AgentBrain>>
+        -script: PuppetScript
+        +decide(perception) Action[]
+    }
+    class MinecraftPort {
+        <<interface>>
+        +perceive() MinecraftPerceptionSnapshot
+        +dispatch(action)
+    }
+    class MinecraftActionAdapter {
+        <<implements MinecraftPort>>
+        -bot: mineflayer.Bot
+        +connect(options)$ MinecraftActionAdapter
+        +perceive() MinecraftPerceptionSnapshot
+        +dispatch(action)
+        +disconnect()
+    }
+    class WorldStatePort {
+        <<interface>>
+        +send(command) WorldStateCommandResult
+    }
+    class WorldStateClient {
+        <<implements WorldStatePort>>
+        -client: A2A Client
+        +connect(baseUrl)$ WorldStateClient
+        +send(command) WorldStateCommandResult
+    }
+    class AgentLoopController {
+        <<Controller>>
+        -agentId: string
+        +runOnce()
+        -dispatch(action)
+    }
+    class AgentIdentity {
+        <<value object>>
+        +id: string
+        +minecraftUsername: string
+        +persona: string
+        +role?: string
+    }
+
+    AgentBrain <|.. PuppetBrain
+    MinecraftPort <|.. MinecraftActionAdapter
+    WorldStatePort <|.. WorldStateClient
+    AgentLoopController --> MinecraftPort : perceive / dispatch
+    AgentLoopController --> WorldStatePort : send
+    AgentLoopController --> AgentBrain : decide(perception)
+    AgentLoopController --> AgentIdentity : agentId
+```
+
+**Per tick, `AgentLoopController.runOnce()`:**
+
+1. Pulls a Minecraft perception snapshot (recent chat, position, health) from
+   the `MinecraftPort`.
+2. Fetches all proposals from the `WorldStatePort` (`list_proposals`, no
+   status filter — the brain sees drafts, active laws, and rejections alike).
+3. Builds a `Perception` and calls `AgentBrain.decide(perception)`.
+4. Routes each returned `Action` to the right port: `chat` / `moveTo` /
+   `dig` go to `MinecraftPort`; `registerAgent` / `proposeLaw` / `vote` /
+   `transferCurrency` go to `WorldStatePort` with the agent's own id attached.
+
+Because `AgentBrain` only ever sees `Perception` in and `Action[]` out, it
+never imports `mineflayer` or the A2A SDK — and `MinecraftActionAdapter` /
+`WorldStateClient` never import an LLM SDK. Swapping `PuppetBrain` for an
+LLM-driven brain later is a new class implementing `AgentBrain`, nothing
+else changes.
+
+## Governance: How a Proposal Becomes Law
+
+This is the exact flow the end-to-end test
+([`packages/e2e/test/proposalToLaw.e2e.test.ts`](packages/e2e/test/proposalToLaw.e2e.test.ts))
+exercises against real Minecraft, real A2A, and real SQLite.
+
+```mermaid
+sequenceDiagram
+    participant A as agent-a<br/>(AgentLoopController)
+    participant B as agent-b<br/>(AgentLoopController)
+    participant WS as World-State Agent<br/>(A2A server)
+    participant MC as Minecraft<br/>(chat)
+    participant Obs as Human / observer
+
+    A->>WS: register_agent(agent-a)
+    B->>WS: register_agent(agent-b)
+    A->>WS: propose_law("Protect the town hall")
+    WS-->>A: { ok: true, data: Proposal(status: draft) }
+
+    B->>WS: list_proposals()
+    WS-->>B: [Proposal(draft, votes: {})]
+    B->>WS: vote(agent-b, yes)
+    WS-->>B: { data: Proposal(draft, votes: {agent-b: yes}) }
+    Note over WS: yesVotes=1, totalAgents=2 -> 1 > 1 is false, stays draft
+
+    A->>WS: list_proposals()
+    WS-->>A: [Proposal(draft, votes: {agent-b: yes})]
+    A->>WS: vote(agent-a, yes)
+    WS-->>A: { data: Proposal(active, votes: {agent-a: yes, agent-b: yes}) }
+    Note over WS: yesVotes=2, totalAgents=2 -> 2 > 1 is true -> active
+
+    A->>WS: list_proposals()
+    WS-->>A: [Proposal(active)]
+    A->>MC: chat("The law passed: Protect the town hall")
+    MC-->>Obs: sees the announcement
+```
+
+## Docker Compose Topology
+
+```mermaid
+flowchart TB
+    subgraph compose["docker-compose.yml"]
+        direction TB
+        paper["paper<br/>itzg/minecraft-server<br/>(Paper, offline mode)"]
+        gate["gate<br/>ghcr.io/minekube/gate<br/>ports 25565/tcp, 19132/udp"]
+        worldstate["world-state<br/>packages/world-state/Dockerfile<br/>port 41241"]
+        agentA["agent-a<br/>packages/agent-runtime/Dockerfile"]
+        agentB["agent-b<br/>packages/agent-runtime/Dockerfile"]
+        volPaper[("paper-data volume")]
+        volWS[("world-state-data volume")]
+    end
+
+    gate -->|"servers.paper: paper:25565<br/>via.enabled: true (protocol translation)<br/>forwarding.mode: none"| paper
+    agentA -->|MINECRAFT_HOST=gate| gate
+    agentB -->|MINECRAFT_HOST=gate| gate
+    agentA -->|WORLD_STATE_URL| worldstate
+    agentB -->|WORLD_STATE_URL| worldstate
+    paper --- volPaper
+    worldstate --- volWS
+```
+
+Two Gate settings exist because a live run surfaced real bugs: `via.enabled`
+starts Gate's bundled protocol-translation subprocess, without which Gate
+dials Paper using a different protocol version than the client negotiated;
+`forwarding.mode: none` disables Gate's default BungeeCord-style forwarding,
+which a vanilla Paper server (no matching `spigot.yml` setting) rejects as
+malformed login data.
+
+## Current Scope
+
+This repository is a **foundation**, not the full vision. What's here and
+verified end-to-end:
+
+- The World-State Agent's governance and economy logic, over real A2A.
+- The Agent Runtime connecting to real Minecraft via Gate.
+- A scripted `PuppetBrain` proving the whole pipeline works.
+
+**Deliberately out of scope for this repository:**
+
+- An LLM-driven `AgentBrain` implementation. `PuppetBrain` is the only
+  `AgentBrain` today; the interface is designed so an LLM-backed one drops
+  in without touching `AgentLoopController`, `MinecraftActionAdapter`, or
+  `WorldStateClient`.
+- Each agent running its own A2A server for direct peer-to-peer negotiation
+  (today, agents only talk *to* the World-State Agent, not to each other
+  directly).
+- CI pipelines and cloud deployment.
 
 ## Development
 
@@ -21,7 +355,15 @@ npm install
 npm test
 ```
 
-## Running the stack
+Integration tests (real Minecraft, real Docker) run separately:
+
+```bash
+./scripts/start-test-paper.sh
+npm run test:integration
+./scripts/stop-test-paper.sh
+```
+
+## Running the Stack
 
 ```bash
 docker compose up --build
