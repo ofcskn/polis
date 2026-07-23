@@ -7,6 +7,9 @@ const emptyPerception: Perception = {
   chatMessages: [],
   position: undefined,
   health: undefined,
+  nearbyBlocks: [],
+  nearbyEntities: [],
+  lastActionResults: [],
   worldState: { openProposals: [] },
 };
 
@@ -36,6 +39,50 @@ describe('OllamaBrain', () => {
     expect(body.model).toBe('llama3.2');
     expect(body.messages[0].content).toContain('agent-a');
     expect(body.messages[0].content).toContain('A pragmatic builder');
+  });
+
+  it('includes nearby blocks, nearby entities, and last action results in the user prompt', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      fakeResponse({ message: { content: '[{"kind":"idle"}]' } })
+    );
+    const brain = new OllamaBrain({ agentId: 'agent-a', persona: '', fetchFn });
+    const perception: Perception = {
+      ...emptyPerception,
+      nearbyBlocks: [{ type: 'oak_log', x: 1, y: 64, z: 2 }],
+      nearbyEntities: [{ name: 'lenser_b_bot', x: 3, y: 64, z: 4, distance: 5 }],
+      lastActionResults: ['Moved to (1, 64, 2).'],
+    };
+
+    await brain.decide(perception);
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    const userContent = body.messages[1].content as string;
+    expect(userContent).toContain('oak_log');
+    expect(userContent).toContain('lenser_b_bot');
+    expect(userContent).toContain('Moved to (1, 64, 2).');
+  });
+
+  it('caps the number of open proposals sent in the prompt, however many actually exist', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      fakeResponse({ message: { content: '[{"kind":"idle"}]' } })
+    );
+    const brain = new OllamaBrain({ agentId: 'agent-a', persona: '', fetchFn });
+    const manyProposals = Array.from({ length: 50 }, (_, i) => ({ id: `p${i}` }));
+    const perception: Perception = {
+      ...emptyPerception,
+      worldState: { openProposals: manyProposals },
+    };
+
+    await brain.decide(perception);
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    const userContent = body.messages[1].content as string;
+    const shownIds = manyProposals.slice(-5).map((p) => p.id);
+    for (const id of shownIds) {
+      expect(userContent).toContain(id);
+    }
+    expect(userContent).not.toContain('"id":"p0"');
+    expect(userContent).toContain('showing 5 most recent of 50 total');
   });
 
   it('returns validated actions parsed from the model response', async () => {

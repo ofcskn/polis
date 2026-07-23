@@ -16,18 +16,26 @@ class FakeMinecraftPort implements MinecraftPort {
     chatMessages: [],
     position: undefined,
     health: undefined,
+    nearbyBlocks: [],
+    nearbyEntities: [],
   };
+  private dispatchResult: string = 'ok';
 
   setSnapshot(snapshot: MinecraftPerceptionSnapshot): void {
     this.snapshot = snapshot;
+  }
+
+  setDispatchResult(result: string): void {
+    this.dispatchResult = result;
   }
 
   perceive(): MinecraftPerceptionSnapshot {
     return this.snapshot;
   }
 
-  async dispatch(action: Action): Promise<void> {
+  async dispatch(action: Action): Promise<string> {
     this.dispatched.push(action);
+    return this.dispatchResult;
   }
 }
 
@@ -106,5 +114,55 @@ describe('AgentLoopController', () => {
     await controller.runOnce();
 
     expect(worldState.sent).toEqual([{ skill: 'list_proposals' }]);
+  });
+
+  it('feeds each dispatched action outcome into the next tick perception, empty on the first tick', async () => {
+    const minecraft = new FakeMinecraftPort();
+    minecraft.setDispatchResult('Moved to (1, 64, 2).');
+    const worldState = new FakeWorldStatePort();
+    const seenPerceptions: Perception[] = [];
+    let tick = 0;
+    const brain: AgentBrain = {
+      decide(perception) {
+        seenPerceptions.push(perception);
+        tick += 1;
+        return tick === 1 ? [{ kind: 'moveTo', x: 1, y: 64, z: 2 }] : [];
+      },
+    };
+    const controller = new AgentLoopController('agent-a', minecraft, worldState, brain);
+
+    await controller.runOnce();
+    await controller.runOnce();
+
+    expect(seenPerceptions[0].lastActionResults).toEqual([]);
+    expect(seenPerceptions[1].lastActionResults).toEqual(['Moved to (1, 64, 2).']);
+  });
+
+  it('reports a governance action outcome including a failure reason', async () => {
+    const minecraft = new FakeMinecraftPort();
+    class FailingWorldStatePort implements WorldStatePort {
+      async send(command: WorldStateCommand): Promise<WorldStateCommandResult> {
+        if (command.skill === 'list_proposals') return { ok: true, data: [] };
+        return { ok: false, error: 'Unknown agent: agent-a' };
+      }
+    }
+    const worldState = new FailingWorldStatePort();
+    const seenPerceptions: Perception[] = [];
+    let tick = 0;
+    const brain: AgentBrain = {
+      decide(perception) {
+        seenPerceptions.push(perception);
+        tick += 1;
+        return tick === 1 ? [{ kind: 'proposeLaw', description: 'Protect the town hall' }] : [];
+      },
+    };
+    const controller = new AgentLoopController('agent-a', minecraft, worldState, brain);
+
+    await controller.runOnce();
+    await controller.runOnce();
+
+    expect(seenPerceptions[1].lastActionResults).toEqual([
+      'Propose law failed: Unknown agent: agent-a',
+    ]);
   });
 });

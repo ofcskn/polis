@@ -31,9 +31,23 @@ doesn't touch anything below it.
       so the model can self-correct instead of the tick silently no-op'ing.
 - [x] Cost/latency controls: exponential backoff on repeated Ollama request
       failures (`OllamaBrain`'s `baseBackoffMs`/`maxBackoffMs`).
+- [x] Grounded perception and real movement: `moveTo` initially only called
+      `bot.lookAt` (turned the bot to face a point without moving it), and
+      the model had no information about nearby blocks/entities, so
+      `dig`/`moveTo` targets were coordinates it invented from nothing.
+      `moveTo` now does real pathfinding via `mineflayer-pathfinder`, and
+      `Perception` includes scanned nearby blocks/entities plus the outcome
+      of the agent's own last actions, with the prompt instructing the
+      model to only target coordinates that actually appear in that list.
 - [ ] Tick interval tuned to model latency rather than the fixed default —
       `TICK_INTERVAL_MS` is still a static env var; a model that's
       routinely slower or faster than 5s isn't accounted for automatically.
+- [ ] A model better suited to this task than general-purpose `llama3.2`
+      (3B) — even with real grounding, a small general model may still
+      reason poorly about spatial/game tasks; a larger or task-tuned model
+      (e.g. a fine-tune similar to
+      [mindcraft](https://github.com/kolbytn/mindcraft)'s `andy-4`) is
+      worth evaluating against `OLLAMA_MODEL`.
 
 ## Phase 2 — Peer-to-Peer Agent Negotiation
 

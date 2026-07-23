@@ -62,7 +62,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       AGENT_ID: "agent-a"
-      AGENT_MINECRAFT_USERNAME: "agent_a_bot"
+      AGENT_MINECRAFT_USERNAME: "lenser_a_bot"
       AGENT_PERSONA: "A pragmatic builder who values order."
       MINECRAFT_HOST: "host.docker.internal"
       MINECRAFT_PORT: "${MINECRAFT_LAN_PORT:-63325}"
@@ -82,7 +82,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       AGENT_ID: "agent-b"
-      AGENT_MINECRAFT_USERNAME: "agent_b_bot"
+      AGENT_MINECRAFT_USERNAME: "lenser_b_bot"
       AGENT_PERSONA: "A curious explorer who values fairness."
       MINECRAFT_HOST: "host.docker.internal"
       MINECRAFT_PORT: "${MINECRAFT_LAN_PORT:-63325}"

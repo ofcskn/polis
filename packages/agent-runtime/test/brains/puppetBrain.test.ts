@@ -7,6 +7,9 @@ const emptyPerception: Perception = {
   chatMessages: [],
   position: undefined,
   health: undefined,
+  nearbyBlocks: [],
+  nearbyEntities: [],
+  lastActionResults: [],
   worldState: { openProposals: [] },
 };
 

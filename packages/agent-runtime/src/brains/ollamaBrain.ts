@@ -1,6 +1,12 @@
 import type { Action, AgentBrain, Perception } from '../types.js';
 import { parseActionsFromResponse } from './actionValidation.js';
 
+// A long-running world can accumulate far more open proposals than a small local model's context
+// can usefully digest; sending them all in one prompt was observed to make the model summarize
+// or echo the list back in prose instead of returning a valid Action array. Capping this keeps
+// prompt size bounded regardless of how much governance history piles up.
+const MAX_PROPOSALS_IN_PROMPT = 5;
+
 export interface OllamaBrainOptions {
   agentId: string;
   persona: string;
@@ -27,6 +33,8 @@ Respond with ONLY a JSON array of actions to take this tick, no prose before or 
 - {"kind":"vote","proposalId":string,"choice":"yes"|"no"}
 - {"kind":"transferCurrency","toAgentId":string,"amount":number}
 - {"kind":"idle"}
+
+IMPORTANT: for "moveTo" and "dig", you can ONLY use coordinates that appear in the "Nearby blocks" or "Nearby entities" list below — never invent coordinates. If nothing in that list is relevant to what you want to do, use "idle" or "chat" instead this tick; the list will change as you look around. "moveTo" does real pathfinding (it can fail if there's no path) and "dig" only works on a real, diggable block — check "Results of your last actions" to see whether your previous move/dig actually succeeded.
 
 Return an empty array [] or a single {"kind":"idle"} if there is nothing worth doing this tick. Keep chat messages short and in character.`;
 
@@ -117,12 +125,17 @@ export class OllamaBrain implements AgentBrain {
   }
 
   private userPrompt(perception: Perception): string {
+    const proposals = perception.worldState.openProposals;
+    const shownProposals = proposals.slice(-MAX_PROPOSALS_IN_PROMPT);
     const lines = [
       `Tick: ${perception.tick}`,
       `Position: ${perception.position ? JSON.stringify(perception.position) : 'unknown'}`,
       `Health: ${perception.health ?? 'unknown'}`,
+      `Nearby blocks (only use these coordinates for moveTo/dig): ${JSON.stringify(perception.nearbyBlocks)}`,
+      `Nearby entities: ${JSON.stringify(perception.nearbyEntities)}`,
+      `Results of your last actions: ${JSON.stringify(perception.lastActionResults)}`,
       `Recent chat: ${JSON.stringify(perception.chatMessages)}`,
-      `Open proposals: ${JSON.stringify(perception.worldState.openProposals)}`,
+      `Open proposals (showing ${shownProposals.length} most recent of ${proposals.length} total): ${JSON.stringify(shownProposals)}`,
     ];
     if (this.lastErrors.length > 0) {
       lines.push(

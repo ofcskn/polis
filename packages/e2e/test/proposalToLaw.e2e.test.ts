@@ -101,13 +101,13 @@ describe('proposal to law, end to end', () => {
     const proposerAdapter = await MinecraftActionAdapter.connect({
       host: MINECRAFT_HOST,
       port: MINECRAFT_PORT,
-      username: 'agent_a_bot',
+      username: 'lenser_a_bot',
     });
     await new Promise((resolve) => setTimeout(resolve, 5_000));
     const voterAdapter = await MinecraftActionAdapter.connect({
       host: MINECRAFT_HOST,
       port: MINECRAFT_PORT,
-      username: 'agent_b_bot',
+      username: 'lenser_b_bot',
     });
     const proposerWorldState = await WorldStateClient.connect(WORLD_STATE_URL);
     const voterWorldState = await WorldStateClient.connect(WORLD_STATE_URL);

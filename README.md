@@ -126,8 +126,8 @@ different port).
    above.) This does **not** start Paper or Gate — see
    [Docker Compose Topology](#docker-compose-topology) for what runs by
    default versus in dedicated-server mode.
-6. Watch your Minecraft world: `agent_a_bot` and `agent_b_bot` should join
-   within a few seconds and start acting on their own.
+6. Watch your Minecraft world: `lenser_a_bot` and `lenser_b_bot` should
+   join within a few seconds and start acting on their own.
 
 ### Dedicated Server Mode (optional)
 
@@ -545,14 +545,19 @@ classDiagram
 
 **Per tick, `AgentLoopController.runOnce()`:**
 
-1. Pulls a Minecraft perception snapshot (recent chat, position, health) from
-   the `MinecraftPort`.
+1. Pulls a Minecraft perception snapshot — recent chat, position, health,
+   nearby blocks, and nearby entities — from the `MinecraftPort`.
 2. Fetches all proposals from the `WorldStatePort` (`list_proposals`, no
    status filter — the brain sees drafts, active laws, and rejections alike).
-3. Builds a `Perception` and calls `AgentBrain.decide(perception)`.
+3. Builds a `Perception` — including the outcome of each action dispatched
+   last tick (`lastActionResults`), so a brain can tell whether what it
+   tried actually worked — and calls `AgentBrain.decide(perception)`.
 4. Routes each returned `Action` to the right port: `chat` / `moveTo` /
    `dig` go to `MinecraftPort`; `registerAgent` / `proposeLaw` / `vote` /
-   `transferCurrency` go to `WorldStatePort` with the agent's own id attached.
+   `transferCurrency` go to `WorldStatePort` with the agent's own id
+   attached. Every dispatch, on either port, returns a short outcome string
+   (e.g. `"Moved to (12, 64, -30)."` or `"Vote failed: Unknown agent:
+   agent-a"`) that becomes next tick's `lastActionResults`.
 
 Because `AgentBrain` only ever sees `Perception` in and `Action[]` out, it
 never imports `mineflayer` or the A2A SDK — and `MinecraftActionAdapter` /
@@ -560,12 +565,25 @@ never imports `mineflayer` or the A2A SDK — and `MinecraftActionAdapter` /
 that: a new class implementing `AgentBrain`, with nothing else in the
 runtime touched.
 
+**Movement and world awareness are real, not guessed.** `moveTo` runs
+actual A* pathfinding via
+[`mineflayer-pathfinder`](https://github.com/PrismarineJS/mineflayer-pathfinder)
+(`bot.pathfinder.goto(new goals.GoalNear(x, y, z, 1))`) rather than just
+turning the bot to face a point, and `dig` checks the target block is real
+and diggable before attempting it. `MinecraftActionAdapter.perceive()`
+scans a radius around the agent for non-air blocks and nearby entities
+(players, mobs) and includes their exact coordinates in `Perception`; a
+brain is instructed to only target coordinates that appear in that list,
+rather than inventing plausible-sounding numbers with no grounding in the
+actual world.
+
 ## Local LLM Brain (Ollama)
 
 [`OllamaBrain`](packages/agent-runtime/src/brains/ollamaBrain.ts) drives an
 agent from a model served by a local [Ollama](https://ollama.com) instance,
 so a full run needs no cloud API key. It sends `Perception` as a prompt
-(persona, position, health, recent chat, open proposals) and expects back a
+(persona, position, health, nearby blocks, nearby entities, the outcome of
+its own last actions, recent chat, open proposals) and expects back a
 JSON array of `Action`s, which
 [`actionValidation.ts`](packages/agent-runtime/src/brains/actionValidation.ts)
 checks against the `Action` schema before anything is dispatched. An
