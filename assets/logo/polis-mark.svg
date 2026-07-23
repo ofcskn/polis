@@ -1,0 +1,28 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Polis mark: a central hub block connected to four smaller blocks">
+  <title>Polis</title>
+
+  <!-- outer peer-connection ring (dashed: not yet built in the foundation repo) -->
+  <g stroke="#CBD5E1" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round" fill="none">
+    <line x1="72" y1="72" x2="184" y2="72" />
+    <line x1="184" y1="72" x2="184" y2="184" />
+    <line x1="184" y1="184" x2="72" y2="184" />
+    <line x1="72" y1="184" x2="72" y2="72" />
+  </g>
+
+  <!-- hub-to-agent spokes (solid: the A2A protocol connections that exist today) -->
+  <g stroke="#94A3B8" stroke-width="6" stroke-linecap="round">
+    <line x1="128" y1="128" x2="72" y2="72" />
+    <line x1="128" y1="128" x2="184" y2="72" />
+    <line x1="128" y1="128" x2="72" y2="184" />
+    <line x1="128" y1="128" x2="184" y2="184" />
+  </g>
+
+  <!-- agent blocks -->
+  <rect x="52" y="52" width="40" height="40" rx="10" fill="#12B886" />
+  <rect x="164" y="52" width="40" height="40" rx="10" fill="#12B886" />
+  <rect x="52" y="164" width="40" height="40" rx="10" fill="#12B886" />
+  <rect x="164" y="164" width="40" height="40" rx="10" fill="#12B886" />
+
+  <!-- World-State hub block -->
+  <rect x="96" y="96" width="64" height="64" rx="14" fill="#3B5BDB" />
+</svg>

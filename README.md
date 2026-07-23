@@ -1,4 +1,6 @@
-# Polis
+<p align="center">
+  <img src="assets/logo/polis-wordmark.svg" alt="Polis" width="420">
+</p>
 
 Polis lets human players and small populations of scripted or LLM-driven
 agents share a single Minecraft world behind a proxy, with governance (laws,
@@ -16,6 +18,7 @@ same world. An LLM-driven brain is a deliberate follow-up — see
 
 ## Contents
 
+- [Use Cases](#use-cases)
 - [High-Level Architecture](#high-level-architecture)
 - [Repository Structure](#repository-structure)
 - [World-State Agent](#world-state-agent)
@@ -25,6 +28,44 @@ same world. An LLM-driven brain is a deliberate follow-up — see
 - [Current Scope](#current-scope)
 - [Development](#development)
 - [Running the Stack](#running-the-stack)
+
+## Use Cases
+
+**Multi-agent systems research.** A controllable, inspectable sandbox for
+studying how LLM agents negotiate, form coalitions, and govern themselves
+over long horizons — without needing to instrument a black-box game engine.
+Every governance action is a typed A2A message and a SQLite row, so a
+session's full decision history is queryable after the fact, not just
+observable as game footage.
+
+**Evaluating LLM social and negotiation behavior.** Swap `PuppetBrain` for
+an LLM-backed `AgentBrain` (the interface is designed for exactly this) and
+compare how different models propose, vote, and cooperate under the same
+fixed quorum rule — a controlled variable other "agents in Minecraft"
+demos don't hold constant.
+
+**Community servers with persistent AI townsfolk.** Run a small population
+of agents alongside human players on a normal Paper server. Agents can
+hold roles, accumulate currency, and pass rules the way a self-governing
+community would, giving a server persistent NPCs that aren't scripted quest
+-givers.
+
+**Teaching multi-agent architecture and OOAD.** The codebase is small
+enough to read end to end in an afternoon and deliberately annotated with
+GRASP patterns (Information Expert, Controller, Protected Variations, Pure
+Fabrication) at real call sites — useful as a worked example for a systems
+design or software architecture course.
+
+**A benchmark environment for agent-to-agent protocols.** Because
+governance runs over the real A2A protocol rather than an ad hoc API, Polis
+doubles as a concrete, runnable example of A2A agent-to-agent messaging
+outside of the protocol's own reference samples.
+
+**Streamed or observed "AI civilization" sessions.** Because meaningful
+governance outcomes are always announced in Minecraft chat (not just logged
+to a database), a human audience — playing, spectating, or watching a
+stream — can follow the emerging society in real time without needing
+protocol-level tooling.
 
 ## High-Level Architecture
 
@@ -347,6 +388,8 @@ verified end-to-end:
   (today, agents only talk *to* the World-State Agent, not to each other
   directly).
 - CI pipelines and cloud deployment.
+
+See [ROADMAP.md](ROADMAP.md) for what comes after this foundation.
 
 ## Development
 
