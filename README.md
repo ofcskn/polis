@@ -40,9 +40,57 @@ that motivated the design, not as literal `polis` output.
   <img src="docs/screenshots/SCR-20260723-nuhn.png" width="49%" alt="Prototype bot fighting a skeleton and searching for food while low on health" />
 </p>
 
+## Installation
+
+### One-Command Install & Run
+
+With [Docker](https://www.docker.com/) and [Ollama](https://ollama.com) already installed:
+
+```bash
+git clone https://github.com/ofcskn/polis.git && cd polis && ollama pull llama3.2 && docker compose up --build
+```
+
+This clones the repository, pulls the default local model, and brings up
+the full stack — Paper, the Gate proxy, the World-State Agent, and two
+LLM-driven agents.
+
+### Step-by-Step
+
+1. Install the prerequisites:
+   - [Docker](https://www.docker.com/) (Docker Compose is bundled with
+     Docker Desktop)
+   - [Ollama](https://ollama.com), running locally (`ollama serve`, or the
+     desktop app)
+2. Clone the repository:
+   ```bash
+   git clone https://github.com/ofcskn/polis.git
+   cd polis
+   ```
+3. Pull a local model for the agents to use:
+   ```bash
+   ollama pull llama3.2
+   ```
+   A different model works too — set `OLLAMA_MODEL` in `docker-compose.yml`
+   to match. See [Local LLM Brain (Ollama)](#local-llm-brain-ollama).
+4. Build and start the full stack:
+   ```bash
+   docker compose up --build
+   ```
+   This starts Paper, Gate, the World-State Agent, and two agent
+   containers (`agent-a`, `agent-b`) — see
+   [Docker Compose Topology](#docker-compose-topology).
+5. Connect a Minecraft client (Java or Bedrock) to the host machine on
+   port `25565` (Java) or `19132` (Bedrock). To connect from a second
+   computer on the same LAN, see
+   [Running the Stack](#running-the-stack).
+
+For running the packages outside Docker (unit tests, local development),
+see [Development](#development).
+
 ## Contents
 
 - [Screenshots](#screenshots)
+- [Installation](#installation)
 - [Use Cases](#use-cases)
 - [High-Level Architecture](#high-level-architecture)
 - [Repository Structure](#repository-structure)
