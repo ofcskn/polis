@@ -12,12 +12,37 @@ REST API.
 
 This repository is the **foundation**: the shared World-State Agent, an
 Agent Runtime that can join a real Minecraft server and act on scripted
-decisions, and the Docker/Gate wiring that puts humans and agents in the
-same world. An LLM-driven brain is a deliberate follow-up — see
-[Current Scope](#current-scope) below.
+decisions, an `OllamaBrain` that drives an agent from a local LLM, and the
+Docker/Gate wiring that puts humans and agents in the same world. See
+[Current Scope](#current-scope) below for what's built versus what's next.
+
+## Screenshots
+
+Early prototyping with a Mineflayer + Ollama bot, validating the
+local-model approach before it was implemented against this repository's
+own `Action` schema as `OllamaBrain` (see
+[Local LLM Brain (Ollama)](#local-llm-brain-ollama)). These are from that
+prototype — [mindcraft](https://github.com/kolbytn/mindcraft), which has
+its own chat-driven `!command(args)` action vocabulary, not this
+repository's `Action` union — so treat them as a record of the behavior
+that motivated the design, not as literal `polis` output.
+
+<p align="center">
+  <img src="docs/screenshots/SCR-20260723-nyge.png" width="49%" alt="Prototype bot narrating that it made stew and offering to help further" />
+  <img src="docs/screenshots/SCR-20260723-nvid.png" width="49%" alt="Prototype bot following the player through a dark forest" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/SCR-20260723-nvat.png" width="32%" alt="Prototype bot stopping on command after following the player" />
+  <img src="docs/screenshots/SCR-20260723-nuvh.png" width="32%" alt="Prototype bot asking the player for mushrooms while low on health" />
+  <img src="docs/screenshots/SCR-20260723-nulq.png" width="32%" alt="Prototype bot asking for food while critically low on health" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/SCR-20260723-nuhn.png" width="49%" alt="Prototype bot fighting a skeleton and searching for food while low on health" />
+</p>
 
 ## Contents
 
+- [Screenshots](#screenshots)
 - [Use Cases](#use-cases)
 - [High-Level Architecture](#high-level-architecture)
 - [Repository Structure](#repository-structure)
@@ -345,27 +370,9 @@ rather than hammering the endpoint every tick.
 | `OLLAMA_MODEL` | `llama3.2` | Model name, as shown by `ollama list`. |
 | `AGENT_PERSONA` | *(empty)* | Free-text persona injected into the system prompt; already modeled per-agent in `docker-compose.yml`. |
 
-**Early prototyping.** Before `OllamaBrain` was implemented against this
-repository's own `Action` schema, the Mineflayer + Ollama approach was
-first validated with [mindcraft](https://github.com/kolbytn/mindcraft), an
-existing project with its own chat-driven `!command(args)` action
-vocabulary (distinct from — and not directly compatible with — the
-`Action` union above). These screenshots are from that prototype, not from
-`OllamaBrain` itself; they're included as a record of the local-model
-behavior that motivated this design, not as literal `polis` output.
-
-<p align="center">
-  <img src="docs/screenshots/SCR-20260723-nyge.png" width="49%" alt="Prototype bot narrating that it made stew and offering to help further" />
-  <img src="docs/screenshots/SCR-20260723-nvid.png" width="49%" alt="Prototype bot following the player through a dark forest" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/SCR-20260723-nvat.png" width="32%" alt="Prototype bot stopping on command after following the player" />
-  <img src="docs/screenshots/SCR-20260723-nuvh.png" width="32%" alt="Prototype bot asking the player for mushrooms while low on health" />
-  <img src="docs/screenshots/SCR-20260723-nulq.png" width="32%" alt="Prototype bot asking for food while critically low on health" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/SCR-20260723-nuhn.png" width="49%" alt="Prototype bot fighting a skeleton and searching for food while low on health" />
-</p>
+See [Screenshots](#screenshots) at the top of this document for the
+Mineflayer + Ollama prototype that validated this approach before
+`OllamaBrain` was implemented.
 
 ## Governance: How a Proposal Becomes Law
 
