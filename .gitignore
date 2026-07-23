@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.sqlite
+*.sqlite-journal
+.env
+
+# Internal planning artifacts — not part of the public project.
+docs/superpowers/
