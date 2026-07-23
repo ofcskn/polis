@@ -40,6 +40,28 @@ that motivated the design, not as literal `polis` output.
   <img src="docs/screenshots/SCR-20260723-nuhn.png" width="49%" alt="Prototype bot fighting a skeleton and searching for food while low on health" />
 </p>
 
+## Contents
+
+- [Screenshots](#screenshots)
+- [Installation](#installation)
+  - [One-Command Install & Run](#one-command-install--run)
+  - [Step-by-Step](#step-by-step)
+  - [LAN Connection](#lan-connection)
+  - [Remote Access via ngrok or Cloudflare Tunnel](#remote-access-via-ngrok-or-cloudflare-tunnel)
+- [Use Cases](#use-cases)
+- [High-Level Architecture](#high-level-architecture)
+- [Repository Structure](#repository-structure)
+- [World-State Agent](#world-state-agent)
+- [Agent Runtime](#agent-runtime)
+- [Local LLM Brain (Ollama)](#local-llm-brain-ollama)
+- [Governance: How a Proposal Becomes Law](#governance-how-a-proposal-becomes-law)
+- [Docker Compose Topology](#docker-compose-topology)
+- [Current Scope](#current-scope)
+- [Development](#development)
+- [Running the Stack](#running-the-stack)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
 ## Installation
 
 ### One-Command Install & Run
@@ -84,26 +106,115 @@ LLM-driven agents.
    computer on the same LAN, see
    [Running the Stack](#running-the-stack).
 
-For running the packages outside Docker (unit tests, local development),
-see [Development](#development).
+### LAN Connection
 
-## Contents
+Your specific setup — a Mac running `docker compose up` and a **Windows**
+machine joining as a client — needs no extra Docker configuration:
+`docker-compose.yml` already publishes Gate's ports on all of the host's
+network interfaces (`25565:25565` for Java, `19132:19132/udp` for
+Bedrock), so anything on the same LAN can reach them via the host's IP.
 
-- [Screenshots](#screenshots)
-- [Installation](#installation)
-- [Use Cases](#use-cases)
-- [High-Level Architecture](#high-level-architecture)
-- [Repository Structure](#repository-structure)
-- [World-State Agent](#world-state-agent)
-- [Agent Runtime](#agent-runtime)
-- [Local LLM Brain (Ollama)](#local-llm-brain-ollama)
-- [Governance: How a Proposal Becomes Law](#governance-how-a-proposal-becomes-law)
-- [Docker Compose Topology](#docker-compose-topology)
-- [Current Scope](#current-scope)
-- [Development](#development)
-- [Running the Stack](#running-the-stack)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+1. **On the Mac** (running the stack), find its LAN IP:
+   ```bash
+   ipconfig getifaddr en0   # Wi-Fi; try en1 if this is empty (Ethernet)
+   ```
+   You should get something like `192.168.1.23`.
+2. **On the Mac**, allow inbound connections through the firewall if it's
+   enabled: System Settings → Network → Firewall → Options, and make sure
+   incoming connections for Docker Desktop aren't blocked.
+3. **On the Windows machine**, confirm it can reach the Mac before
+   touching Minecraft — open PowerShell:
+   ```powershell
+   Test-NetConnection 192.168.1.23 -Port 25565
+   ```
+   `TcpTestSucceeded : True` means you're good; `False` means either the
+   Mac's firewall or the router (if the two machines are on different
+   Wi-Fi bands/VLANs) is blocking it.
+4. **On the Windows machine**, open the Minecraft Launcher → **Multiplayer**
+   → **Add Server**, and enter the Mac's IP and port as the server address,
+   e.g. `192.168.1.23:25565`. For Bedrock, use the same IP with port
+   `19132` in the Bedrock client's "Add Server" screen.
+5. Select the server and **Join Game**.
+
+This works for any two machines on the same Wi-Fi/LAN, regardless of which
+side is macOS, Windows, or Linux — only the exact "find my IP" and
+"add a server" steps differ by OS.
+
+### Remote Access via ngrok or Cloudflare Tunnel
+
+LAN only reaches machines on the same network. To let a computer
+**anywhere on the internet** connect — not just your Windows machine on
+the same Wi-Fi — you need to expose port `25565` (and/or `19132` for
+Bedrock) publicly. Router port-forwarding can do this but means editing
+your home router's config and exposing your public IP directly; the two
+options below avoid that by tunneling out instead.
+
+> [!Caution]
+> This stack runs Minecraft with `ONLINE_MODE: FALSE` (needed so bots
+> without Microsoft accounts can join — see [Current Scope](#current-scope)
+> / [ROADMAP.md](ROADMAP.md#phase-4--production-hardening)). That also
+> means **no Mojang authentication**: anyone who reaches the exposed port
+> can join under any username. Only share a public tunnel URL with people
+> you trust, keep sessions short-lived, and consider whitelisting (see
+> below) before exposing this beyond a LAN.
+
+**Option A — ngrok (simpler, no domain needed):**
+
+```bash
+brew install ngrok/ngrok/ngrok        # or download from ngrok.com
+ngrok config add-authtoken <your-authtoken>   # free account, from the ngrok dashboard
+ngrok tcp 25565
+```
+
+`ngrok` prints a forwarding address like `tcp://0.tcp.ngrok.io:41234 ->
+localhost:25565`. Give the `host:port` part (e.g. `0.tcp.ngrok.io:41234`)
+to whoever's connecting — they add it as a server in their Minecraft
+client exactly like a LAN address, no extra software needed on their end.
+Note: on ngrok's free plan this address changes every time you restart the
+tunnel, and UDP (Bedrock) tunneling has more limited free-tier support —
+this option is most reliable for Java Edition.
+
+**Option B — Cloudflare Tunnel (stable hostname, needs a domain you control):**
+
+Raw TCP (not HTTP) through Cloudflare Tunnel requires `cloudflared` on
+*both* ends, unless you're on Cloudflare Spectrum (a paid product that
+skips the client-side step).
+
+```bash
+# On the Mac (host):
+brew install cloudflared
+cloudflared tunnel login                 # requires a domain added to Cloudflare
+cloudflared tunnel create polis-minecraft
+```
+
+Add an ingress rule mapping your chosen hostname to the local Minecraft
+port, e.g. in `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: polis-minecraft
+credentials-file: /path/to/<tunnel-id>.json
+ingress:
+  - hostname: minecraft.yourdomain.com
+    service: tcp://localhost:25565
+  - service: http_status:404
+```
+
+```bash
+cloudflared tunnel run polis-minecraft
+```
+
+On the **connecting Windows machine**, install `cloudflared` and forward a
+local port through the tunnel:
+
+```powershell
+cloudflared access tcp --hostname minecraft.yourdomain.com --url 127.0.0.1:25565
+```
+
+Then add `127.0.0.1:25565` as the server address in that machine's
+Minecraft client (it's talking to the local `cloudflared` process, which
+relays through Cloudflare to your Mac). This is more setup than ngrok, but
+the hostname stays stable across restarts and isn't tied to ngrok's
+session limits.
 
 ## Use Cases
 
@@ -534,22 +645,11 @@ docker compose up --build
 ```
 
 Connect a Minecraft client (Java or Bedrock) to the host running Gate on
-port 25565 (Java) or 19132 (Bedrock).
-
-**Connecting from another machine on the same LAN:** `docker-compose.yml`
-already publishes Gate's ports to all interfaces on the host
-(`25565:25565`, `19132:19132/udp`), so a second computer doesn't need any
-extra Docker configuration — it just needs the host machine's LAN IP
-address instead of `localhost`:
-
-1. On the machine running `docker compose up`, find its LAN IP:
-   - macOS: `ipconfig getifaddr en0` (or `en1` for Wi-Fi vs. Ethernet)
-   - Linux: `hostname -I`
-   - Windows: `ipconfig` and read the IPv4 Address
-2. On the second computer, add a server in the Minecraft client using that
-   IP and port `25565` (e.g. `192.168.1.23:25565`).
-3. Make sure the host machine's firewall allows inbound connections on
-   `25565`/`19132` from the local network.
+port 25565 (Java) or 19132 (Bedrock). To connect from another machine on
+the same LAN, or from anywhere on the internet via a tunnel, see
+[LAN Connection](#lan-connection) and
+[Remote Access via ngrok or Cloudflare Tunnel](#remote-access-via-ngrok-or-cloudflare-tunnel)
+under [Installation](#installation).
 
 ## License
 
