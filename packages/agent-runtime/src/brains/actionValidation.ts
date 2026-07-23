@@ -67,8 +67,16 @@ export function parseActionsFromResponse(raw: string): ActionValidationResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
-  } catch (error) {
-    return { actions: [], errors: [`invalid JSON: ${(error as Error).message}`] };
+  } catch (originalError) {
+    // Small models observed in practice wrapping each object in an extra, unescaped string layer
+    // — e.g. ["{"kind":"idle"}"] instead of [{"kind":"idle"}] — which breaks JSON.parse entirely
+    // rather than just producing a string element. This is a narrow, mechanical undo of exactly
+    // that pattern, tried only as a fallback after the direct parse fails.
+    try {
+      parsed = JSON.parse(jsonText.replaceAll('"{', '{').replaceAll('}"', '}'));
+    } catch {
+      return { actions: [], errors: [`invalid JSON: ${(originalError as Error).message}`] };
+    }
   }
 
   if (!Array.isArray(parsed)) {

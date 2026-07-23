@@ -53,16 +53,32 @@ async function main() {
 
   const brain = buildBrain(identity);
   console.log(
-    `[${identity.id}] brain: ${brainKind}${brainKind === 'ollama' ? ` (model: ${process.env.OLLAMA_MODEL ?? 'llama3.2'}, url: ${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'})` : ''}, ticking every ${tickIntervalMs}ms.`
+    `[${identity.id}] brain: ${brainKind}${brainKind === 'ollama' ? ` (model: ${process.env.OLLAMA_MODEL ?? 'qwen2.5:7b'}, url: ${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'})` : ''}, ticking every ${tickIntervalMs}ms.`
   );
 
   const controller = new AgentLoopController(identity.id, adapter, worldState, brain);
 
   await controller.runOnce();
+  // A tick can legitimately take longer than tickIntervalMs (e.g. a slow Ollama response), and
+  // setInterval doesn't wait for the previous callback to finish — without this guard, two
+  // runOnce() calls can overlap and race on the same AgentLoopController.tick value, corrupting
+  // both perception (they'd both see it and increment it once) and world-state (double dispatch
+  // of the same decision).
+  let tickInFlight = false;
   setInterval(() => {
-    controller.runOnce().catch((error) => {
-      console.error(`[${identity.id}] tick failed`, error);
-    });
+    if (tickInFlight) {
+      console.log(`[${identity.id}] skipping tick, previous one is still running.`);
+      return;
+    }
+    tickInFlight = true;
+    controller
+      .runOnce()
+      .catch((error) => {
+        console.error(`[${identity.id}] tick failed`, error);
+      })
+      .finally(() => {
+        tickInFlight = false;
+      });
   }, tickIntervalMs);
 }
 

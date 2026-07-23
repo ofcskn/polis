@@ -34,6 +34,13 @@ Respond with ONLY a JSON array of actions to take this tick, no prose before or 
 - {"kind":"transferCurrency","toAgentId":string,"amount":number}
 - {"kind":"idle"}
 
+Example of a complete, correctly-formatted response with two actions:
+[{"kind":"chat","text":"Hello!"},{"kind":"idle"}]
+
+Each array element is a raw JSON object — never a string. Do NOT put quotes
+around an object (e.g. NEVER write ["{...}"] — that is wrong; write
+[{...}] instead).
+
 IMPORTANT: for "moveTo" and "dig", you can ONLY use coordinates that appear in the "Nearby blocks" or "Nearby entities" list below — never invent coordinates. If nothing in that list is relevant to what you want to do, use "idle" or "chat" instead this tick; the list will change as you look around. "moveTo" does real pathfinding (it can fail if there's no path) and "dig" only works on a real, diggable block — check "Results of your last actions" to see whether your previous move/dig actually succeeded.
 
 Return an empty array [] or a single {"kind":"idle"} if there is nothing worth doing this tick. Keep chat messages short and in character.`;
