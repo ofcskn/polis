@@ -26,7 +26,7 @@ export class AgentLoopController {
       worldState: { openProposals: this.openProposals },
     };
 
-    const actions = this.brain.decide(perception);
+    const actions = await this.brain.decide(perception);
     for (const action of actions) {
       await this.dispatch(action);
     }

@@ -1,0 +1,139 @@
+import type { Action, AgentBrain, Perception } from '../types.js';
+import { parseActionsFromResponse } from './actionValidation.js';
+
+export interface OllamaBrainOptions {
+  agentId: string;
+  persona: string;
+  baseUrl?: string;
+  model?: string;
+  /** Injectable for tests; defaults to the global fetch. */
+  fetchFn?: typeof fetch;
+  /** Injectable clock for tests. */
+  now?: () => number;
+  baseBackoffMs?: number;
+  maxBackoffMs?: number;
+}
+
+const SYSTEM_PROMPT_TEMPLATE = `You are {agentId}, an autonomous agent living in a shared Minecraft world alongside other agents and human players. Your persona: {persona}
+
+You participate in the world two ways: acting in Minecraft (chat, movement, digging) and participating in this world's self-governance (proposing laws, voting, transferring currency) through a shared World-State Agent.
+
+Respond with ONLY a JSON array of actions to take this tick, no prose before or after. Each element must be one of:
+- {"kind":"chat","text":string}
+- {"kind":"moveTo","x":number,"y":number,"z":number}
+- {"kind":"dig","x":number,"y":number,"z":number}
+- {"kind":"registerAgent","role"?:string}
+- {"kind":"proposeLaw","description":string}
+- {"kind":"vote","proposalId":string,"choice":"yes"|"no"}
+- {"kind":"transferCurrency","toAgentId":string,"amount":number}
+- {"kind":"idle"}
+
+Return an empty array [] or a single {"kind":"idle"} if there is nothing worth doing this tick. Keep chat messages short and in character.`;
+
+/**
+ * An LLM-backed AgentBrain that calls a local Ollama server. Fills the Phase 1 slot described in
+ * ROADMAP.md: Perception -> prompt, model response -> validated Action[], with malformed
+ * responses degrading to idle instead of crashing the tick, and the previous tick's rejection
+ * reasons fed back so the model can self-correct.
+ */
+export class OllamaBrain implements AgentBrain {
+  private readonly baseUrl: string;
+  private readonly model: string;
+  private readonly fetchFn: typeof fetch;
+  private readonly now: () => number;
+  private readonly baseBackoffMs: number;
+  private readonly maxBackoffMs: number;
+
+  private lastErrors: string[] = [];
+  private consecutiveFailures = 0;
+  private nextAllowedAttemptAt = 0;
+
+  constructor(private readonly options: OllamaBrainOptions) {
+    this.baseUrl = options.baseUrl ?? 'http://localhost:11434';
+    this.model = options.model ?? 'llama3.2';
+    this.fetchFn = options.fetchFn ?? fetch;
+    this.now = options.now ?? (() => Date.now());
+    this.baseBackoffMs = options.baseBackoffMs ?? 2000;
+    this.maxBackoffMs = options.maxBackoffMs ?? 60_000;
+  }
+
+  async decide(perception: Perception): Promise<Action[]> {
+    if (this.now() < this.nextAllowedAttemptAt) {
+      return [{ kind: 'idle' }];
+    }
+
+    try {
+      const content = await this.requestCompletion(perception);
+      const { actions, errors } = parseActionsFromResponse(content);
+      this.lastErrors = errors;
+      this.onSuccess();
+      return actions.length > 0 ? actions : [{ kind: 'idle' }];
+    } catch (error) {
+      this.lastErrors = [`request failed: ${(error as Error).message}`];
+      this.onFailure();
+      return [{ kind: 'idle' }];
+    }
+  }
+
+  private async requestCompletion(perception: Perception): Promise<string> {
+    const response = await this.fetchFn(new URL('/api/chat', this.baseUrl), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        stream: false,
+        messages: [
+          { role: 'system', content: this.systemPrompt() },
+          { role: 'user', content: this.userPrompt(perception) },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama returned status ${response.status}`);
+    }
+
+    const body = (await response.json()) as { message?: { content?: string } };
+    if (typeof body.message?.content !== 'string') {
+      throw new Error('Ollama response was missing message.content');
+    }
+    return body.message.content;
+  }
+
+  private systemPrompt(): string {
+    return SYSTEM_PROMPT_TEMPLATE.replace('{agentId}', this.options.agentId).replace(
+      '{persona}',
+      this.options.persona || 'no persona set'
+    );
+  }
+
+  private userPrompt(perception: Perception): string {
+    const lines = [
+      `Tick: ${perception.tick}`,
+      `Position: ${perception.position ? JSON.stringify(perception.position) : 'unknown'}`,
+      `Health: ${perception.health ?? 'unknown'}`,
+      `Recent chat: ${JSON.stringify(perception.chatMessages)}`,
+      `Open proposals: ${JSON.stringify(perception.worldState.openProposals)}`,
+    ];
+    if (this.lastErrors.length > 0) {
+      lines.push(
+        `Your previous response had problems and those actions were skipped: ${JSON.stringify(this.lastErrors)}. Fix this in your JSON array.`
+      );
+    }
+    return lines.join('\n');
+  }
+
+  private onSuccess(): void {
+    this.consecutiveFailures = 0;
+    this.nextAllowedAttemptAt = 0;
+  }
+
+  private onFailure(): void {
+    this.consecutiveFailures += 1;
+    const backoff = Math.min(
+      this.maxBackoffMs,
+      this.baseBackoffMs * 2 ** (this.consecutiveFailures - 1)
+    );
+    this.nextAllowedAttemptAt = this.now() + backoff;
+  }
+}

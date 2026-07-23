@@ -10,20 +10,30 @@ earlier ones exist, but none of this is scheduled.
 
 ## Phase 1 — A Real Agent Brain
 
-The `AgentBrain` interface (`decide(perception) -> Action[]`) exists
-specifically so this phase doesn't touch anything below it.
+The `AgentBrain` interface (`decide(perception) -> Action[] | Promise<Action[]>`,
+widened to allow async implementations) exists specifically so this phase
+doesn't touch anything below it.
 
-- [ ] An LLM-backed `AgentBrain` implementation (e.g. via the Claude Agent
-      SDK or OpenAI Agents SDK), mapping `Perception` to a system prompt and
-      `Action` to a tool-call schema.
-- [ ] Per-agent persona/goal text (`AgentIdentity.persona`, already modeled
-      but unused by `PuppetBrain`) actually shaping behavior.
-- [ ] Validation of LLM-proposed actions against the `Action` schema before
-      dispatch, with a rejected-action observation fed back on the next
-      tick (see the design spec's Error Handling section) so a model can
-      self-correct instead of the tick silently no-op'ing.
-- [ ] Cost/latency controls: backoff on LLM failures, a tick interval tuned
-      to model latency rather than the fixed default.
+- [x] An LLM-backed `AgentBrain` implementation:
+      [`OllamaBrain`](packages/agent-runtime/src/brains/ollamaBrain.ts),
+      calling a local Ollama server rather than a cloud SDK, so the
+      foundation runs with no API key. A Claude Agent SDK / OpenAI Agents
+      SDK-backed brain is still open if a cloud-hosted option is wanted
+      later — same interface, new class.
+- [x] Per-agent persona/goal text (`AgentIdentity.persona`) actually shapes
+      behavior — `OllamaBrain` injects it into the system prompt;
+      `docker-compose.yml`'s `agent-a` / `agent-b` already carry distinct
+      personas.
+- [x] Validation of LLM-proposed actions against the `Action` schema before
+      dispatch
+      ([`actionValidation.ts`](packages/agent-runtime/src/brains/actionValidation.ts)),
+      with rejected-action reasons fed back into the *next* tick's prompt
+      so the model can self-correct instead of the tick silently no-op'ing.
+- [x] Cost/latency controls: exponential backoff on repeated Ollama request
+      failures (`OllamaBrain`'s `baseBackoffMs`/`maxBackoffMs`).
+- [ ] Tick interval tuned to model latency rather than the fixed default —
+      `TICK_INTERVAL_MS` is still a static env var; a model that's
+      routinely slower or faster than 5s isn't accounted for automatically.
 
 ## Phase 2 — Peer-to-Peer Agent Negotiation
 

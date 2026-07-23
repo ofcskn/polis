@@ -21,7 +21,7 @@ export type Action =
   | { kind: 'idle' };
 
 export interface AgentBrain {
-  decide(perception: Perception): Action[];
+  decide(perception: Perception): Action[] | Promise<Action[]>;
 }
 
 export interface MinecraftPerceptionSnapshot {

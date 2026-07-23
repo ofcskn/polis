@@ -23,11 +23,14 @@ same world. An LLM-driven brain is a deliberate follow-up — see
 - [Repository Structure](#repository-structure)
 - [World-State Agent](#world-state-agent)
 - [Agent Runtime](#agent-runtime)
+- [Local LLM Brain (Ollama)](#local-llm-brain-ollama)
 - [Governance: How a Proposal Becomes Law](#governance-how-a-proposal-becomes-law)
 - [Docker Compose Topology](#docker-compose-topology)
 - [Current Scope](#current-scope)
 - [Development](#development)
 - [Running the Stack](#running-the-stack)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ## Use Cases
 
@@ -297,9 +300,50 @@ classDiagram
 
 Because `AgentBrain` only ever sees `Perception` in and `Action[]` out, it
 never imports `mineflayer` or the A2A SDK — and `MinecraftActionAdapter` /
-`WorldStateClient` never import an LLM SDK. Swapping `PuppetBrain` for an
-LLM-driven brain later is a new class implementing `AgentBrain`, nothing
-else changes.
+`WorldStateClient` never import an LLM SDK. `OllamaBrain` (below) is exactly
+that: a new class implementing `AgentBrain`, with nothing else in the
+runtime touched.
+
+## Local LLM Brain (Ollama)
+
+[`OllamaBrain`](packages/agent-runtime/src/brains/ollamaBrain.ts) drives an
+agent from a model served by a local [Ollama](https://ollama.com) instance,
+so a full run needs no cloud API key. It sends `Perception` as a prompt
+(persona, position, health, recent chat, open proposals) and expects back a
+JSON array of `Action`s, which
+[`actionValidation.ts`](packages/agent-runtime/src/brains/actionValidation.ts)
+checks against the `Action` schema before anything is dispatched. An
+invalid or unparsable response degrades to `{"kind":"idle"}` for that tick
+instead of crashing the agent, and the rejection reasons are folded into
+the *next* tick's prompt so the model has a chance to self-correct. Repeated
+request failures (e.g. Ollama unreachable) trigger exponential backoff
+rather than hammering the endpoint every tick.
+
+**Setup:**
+
+1. Install [Ollama](https://ollama.com) and pull a model, e.g.:
+   ```bash
+   ollama pull llama3.2
+   ```
+2. Make sure Ollama is running (`ollama serve`, or the desktop app) and
+   reachable at `http://localhost:11434`.
+3. `docker-compose.yml` already points `agent-a` and `agent-b` at
+   `OLLAMA_BASE_URL=http://host.docker.internal:11434` with
+   `AGENT_BRAIN=ollama` — the containers reach the model running on your
+   host machine, no extra network config needed on macOS/Windows Docker
+   Desktop (an `extra_hosts` entry makes the same URL resolve on Linux too).
+4. Run `docker compose up --build` as described below. Each agent registers
+   itself with the World-State Agent, then is fully driven by the model:
+   deciding when to chat, move, propose laws, and vote.
+
+**Configuration:**
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `AGENT_BRAIN` | `ollama` | `ollama` for `OllamaBrain`, or `puppet` for the scripted brain (useful for infra testing without a model running). |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL of the Ollama server. |
+| `OLLAMA_MODEL` | `llama3.2` | Model name, as shown by `ollama list`. |
+| `AGENT_PERSONA` | *(empty)* | Free-text persona injected into the system prompt; already modeled per-agent in `docker-compose.yml`. |
 
 ## Governance: How a Proposal Becomes Law
 
@@ -376,14 +420,14 @@ verified end-to-end:
 
 - The World-State Agent's governance and economy logic, over real A2A.
 - The Agent Runtime connecting to real Minecraft via Gate.
-- A scripted `PuppetBrain` proving the whole pipeline works.
+- Two `AgentBrain` implementations: a scripted `PuppetBrain`, and an
+  `OllamaBrain` that drives an agent from a locally-run LLM (see
+  [Local LLM Brain (Ollama)](#local-llm-brain-ollama) below).
+- `agent-a` / `agent-b` in `docker-compose.yml` give the default stack two
+  independently-personified agents out of the box.
 
 **Deliberately out of scope for this repository:**
 
-- An LLM-driven `AgentBrain` implementation. `PuppetBrain` is the only
-  `AgentBrain` today; the interface is designed so an LLM-backed one drops
-  in without touching `AgentLoopController`, `MinecraftActionAdapter`, or
-  `WorldStateClient`.
 - Each agent running its own A2A server for direct peer-to-peer negotiation
   (today, agents only talk *to* the World-State Agent, not to each other
   directly).
@@ -414,3 +458,36 @@ docker compose up --build
 
 Connect a Minecraft client (Java or Bedrock) to the host running Gate on
 port 25565 (Java) or 19132 (Bedrock).
+
+**Connecting from another machine on the same LAN:** `docker-compose.yml`
+already publishes Gate's ports to all interfaces on the host
+(`25565:25565`, `19132:19132/udp`), so a second computer doesn't need any
+extra Docker configuration — it just needs the host machine's LAN IP
+address instead of `localhost`:
+
+1. On the machine running `docker compose up`, find its LAN IP:
+   - macOS: `ipconfig getifaddr en0` (or `en1` for Wi-Fi vs. Ethernet)
+   - Linux: `hostname -I`
+   - Windows: `ipconfig` and read the IPv4 Address
+2. On the second computer, add a server in the Minecraft client using that
+   IP and port `25565` (e.g. `192.168.1.23:25565`).
+3. Make sure the host machine's firewall allows inbound connections on
+   `25565`/`19132` from the local network.
+
+## License
+
+MIT — see [LICENSE](LICENSE). All dependencies used by the Agent Runtime
+(`mineflayer`, `@a2a-js/sdk`) and by `OllamaBrain` (the [Ollama](https://ollama.com)
+HTTP API) are called at arm's length over their public interfaces; no
+third-party source is vendored into this repository.
+
+## Acknowledgments
+
+- [Mineflayer](https://prismarinejs.github.io/mineflayer/#/) and the wider
+  PrismarineJS project, which the Agent Runtime uses to connect to
+  Minecraft.
+- [Ollama](https://ollama.com), which `OllamaBrain` targets for running
+  agent models locally.
+- [mindcraft](https://github.com/kolbytn/mindcraft), an existing
+  Mineflayer + LLM project, as prior art on driving Minecraft agents from
+  local models via Ollama.
