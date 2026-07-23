@@ -50,6 +50,7 @@ export class MinecraftActionAdapter implements MinecraftPort {
   }
 
   async dispatch(action: Action): Promise<void> {
+    console.log(`[${this.bot.username}] dispatching Minecraft action: ${JSON.stringify(action)}`);
     switch (action.kind) {
       case 'chat':
         this.bot.chat(action.text);
@@ -61,6 +62,10 @@ export class MinecraftActionAdapter implements MinecraftPort {
         const block = this.bot.blockAt(new Vec3(action.x, action.y, action.z));
         if (block) {
           await this.bot.dig(block);
+        } else {
+          console.log(
+            `[${this.bot.username}] dig target (${action.x}, ${action.y}, ${action.z}) has no block loaded there`
+          );
         }
         return;
       }

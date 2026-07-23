@@ -58,17 +58,26 @@ export class OllamaBrain implements AgentBrain {
   }
 
   async decide(perception: Perception): Promise<Action[]> {
+    const tag = `[${this.options.agentId} tick ${perception.tick}]`;
+
     if (this.now() < this.nextAllowedAttemptAt) {
+      console.log(`${tag} skipping request, backing off until ${new Date(this.nextAllowedAttemptAt).toISOString()}`);
       return [{ kind: 'idle' }];
     }
 
     try {
       const content = await this.requestCompletion(perception);
+      console.log(`${tag} raw model response: ${content}`);
       const { actions, errors } = parseActionsFromResponse(content);
+      if (errors.length > 0) {
+        console.log(`${tag} rejected part of the response: ${JSON.stringify(errors)}`);
+      }
+      console.log(`${tag} decided actions: ${JSON.stringify(actions)}`);
       this.lastErrors = errors;
       this.onSuccess();
       return actions.length > 0 ? actions : [{ kind: 'idle' }];
     } catch (error) {
+      console.error(`${tag} request failed:`, error);
       this.lastErrors = [`request failed: ${(error as Error).message}`];
       this.onFailure();
       return [{ kind: 'idle' }];

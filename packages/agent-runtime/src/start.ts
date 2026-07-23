@@ -28,21 +28,33 @@ async function main() {
   const minecraftPort = Number(process.env.MINECRAFT_PORT ?? 25565);
   const worldStateUrl = process.env.WORLD_STATE_URL ?? 'http://world-state:41241/';
   const tickIntervalMs = Number(process.env.TICK_INTERVAL_MS ?? 5000);
+  const brainKind = process.env.AGENT_BRAIN ?? 'ollama';
 
+  console.log(
+    `[${identity.id}] connecting to Minecraft at ${minecraftHost}:${minecraftPort} as ${identity.minecraftUsername}...`
+  );
   const adapter = await MinecraftActionAdapter.connect({
     host: minecraftHost,
     port: minecraftPort,
     username: identity.minecraftUsername,
   });
+  console.log(`[${identity.id}] connected to Minecraft and spawned.`);
+
+  console.log(`[${identity.id}] connecting to World-State Agent at ${worldStateUrl}...`);
   const worldState = await WorldStateClient.connect(worldStateUrl);
+  console.log(`[${identity.id}] connected to World-State Agent.`);
 
   // Registration is a hard prerequisite for proposeLaw/vote (GovernanceEngine.requireAgent), so
   // it's done deterministically here rather than left to a brain's judgment — an LLM brain that
   // never gets around to calling registerAgent would otherwise be silently locked out of
   // governance for the rest of the run.
   await worldState.send({ skill: 'register_agent', agentId: identity.id, role: identity.role });
+  console.log(`[${identity.id}] registered with World-State Agent (role: ${identity.role ?? 'none'}).`);
 
   const brain = buildBrain(identity);
+  console.log(
+    `[${identity.id}] brain: ${brainKind}${brainKind === 'ollama' ? ` (model: ${process.env.OLLAMA_MODEL ?? 'llama3.2'}, url: ${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'})` : ''}, ticking every ${tickIntervalMs}ms.`
+  );
 
   const controller = new AgentLoopController(identity.id, adapter, worldState, brain);
 
