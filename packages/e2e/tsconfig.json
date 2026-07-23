@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["test"],
+  "references": [
+    { "path": "../protocol" },
+    { "path": "../world-state" },
+    { "path": "../agent-runtime" }
+  ]
+}
