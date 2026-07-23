@@ -1,6 +1,8 @@
 config:
   bind: 0.0.0.0:25565
   onlineMode: false
+  forwarding:
+    mode: none
   servers:
     paper: paper:25565
   try:
@@ -10,3 +12,5 @@ config:
       §bPolis
       §eHumans and AI agents, one world.
   bedrock: true
+  via:
+    enabled: true

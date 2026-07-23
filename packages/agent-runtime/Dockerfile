@@ -1,6 +1,6 @@
 FROM node:20-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* tsconfig.base.json ./
 COPY packages/protocol ./packages/protocol
 COPY packages/agent-runtime ./packages/agent-runtime
 RUN npm install
