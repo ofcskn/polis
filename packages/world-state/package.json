@@ -1,0 +1,25 @@
+{
+  "name": "@polis/world-state",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/start.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^1.0.0",
+    "@polis/protocol": "*",
+    "better-sqlite3": "^11.5.0",
+    "express": "^4.21.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
